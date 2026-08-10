@@ -1,0 +1,32 @@
+name: Order-Flow Agent Run
+
+on:
+  schedule:
+    # Every 5 minutes during NSE market hours (9:15-15:30 IST = 3:45-10:00 UTC), Mon-Fri
+    - cron: '*/5 3-10 * * 1-5'
+  workflow_dispatch: {}   # allows manual "Run workflow" trigger for testing
+
+jobs:
+  run-agent:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run agent check
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python3 run_agent_check.py
+
+      - name: Commit updated logs
+        run: |
+          git config user.name "order-flow-agent-bot"
+          git config user.email "agent@github-actions"
+          git add memory/trade_log.jsonl data/daily_store/ || true
+          git diff --staged --quiet || git commit -m "Auto: agent run $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git push || true
