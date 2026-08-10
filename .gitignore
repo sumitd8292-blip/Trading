@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+data/nifty_2021_2026.json
+data/nifty_5min_90d.json
+_tmp_*
