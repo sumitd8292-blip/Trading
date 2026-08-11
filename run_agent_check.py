@@ -94,7 +94,7 @@ def groww_test():
         return
     today = datetime.now().strftime("%Y-%m-%d")
     try:
-        candles = groww_api.fetch_candles("NIFTY", f"{today} 09:15:00", f"{today} 15:30:00")
+        candles = groww_api.fetch_candles("NIFTY", f"{today} 09:15:00", f"{today} 15:30:00", interval_minutes=5)
         msg = f"Groww API test SUCCESS: fetched {len(candles)} NIFTY candles for {today}."
         if candles:
             msg += f"\nFirst: {candles[0]}\nLast: {candles[-1]}"

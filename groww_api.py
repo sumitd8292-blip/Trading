@@ -3,37 +3,30 @@ Groww Direct API — Live Data Fetcher
 -------------------------------------
 SEPARATE from GrowwMCP. GrowwMCP only works inside Claude chat sessions.
 This module uses Groww's own paid Trading/Data API (₹499+GST/month
-subscription, api.groww.in) so live data fetching can eventually run from
-GitHub Actions without a Claude session open.
+subscription, active since 11 Aug 2026) so live data fetching can
+eventually run from GitHub Actions without a Claude session open.
 
-*** IMPORTANT LIMITATION (found 11 Aug 2026) ***
-Groww's access token EXPIRES DAILY at 6 AM IST. This means the token Saim
-provides needs to be regenerated and re-uploaded to GitHub Secrets every
-day before it can be used — full unattended 24x7 automation is NOT
-possible with this token type alone. Options going forward:
-  1. Saim manually regenerates + sends the token each morning (Claude
-     updates the GitHub secret each time) — simple but still needs a
-     human step daily.
-  2. Investigate whether Groww offers a longer-lived API key + secret
-     pair for programmatic (non-interactive) daily refresh — check
-     Groww's API docs "User" / "Annexures" sections for a token-refresh
-     endpoint using GROWW_API_SECRET.
-Not yet resolved — flagging here for the next work session.
+*** IMPORTANT LIMITATION ***
+Groww's access token EXPIRES DAILY at 6 AM IST. The token needs to be
+regenerated and re-uploaded to GitHub Secrets every day. Not yet
+automated — Saim sends a fresh token, Claude re-encrypts it into
+GROWW_API_KEY each time. Investigate Groww's TOTP-based auto-refresh
+(secret + totp) for a longer-lived unattended setup later.
 
-ENDPOINT (per Groww's documented cURL API, groww.in/trade-api/docs/curl):
-  GET https://api.groww.in/v1/historical/candle/range
-    ?exchange=NSE&segment=CASH&trading_symbol=NIFTY
+ENDPOINT (corrected 11 Aug 2026 — previous version used a deprecated
+path/param and got 403s):
+  GET https://api.groww.in/v1/historical/candles
+    ?exchange=NSE&segment=CASH&groww_symbol=NSE-NIFTY
     &start_time=YYYY-MM-DD HH:MM:SS&end_time=YYYY-MM-DD HH:MM:SS
+    &candle_interval=5minute
   Headers:
     Authorization: Bearer {ACCESS_TOKEN}
     Accept: application/json
     X-API-VERSION: 1.0
 
-  NOTE: Groww's docs mark this endpoint "deprecated, use Get Historical
-  Candle Data instead" but did not surface the exact replacement path in
-  available documentation as of 11 Aug 2026 — using this one since it is
-  still live and documented with a full working example. Revisit if it
-  stops working.
+  groww_symbol format: "EXCHANGE-TRADINGSYMBOL" for stocks/indices (e.g.
+  "NSE-NIFTY", "NSE-WIPRO"). For FNO: adds expiry/strike/CE-PE, not
+  needed yet for index-only candles.
 
 Response shape (documented):
   {
@@ -51,29 +44,47 @@ import urllib.request
 import urllib.parse
 from datetime import datetime
 
-GROWW_API_KEY = os.environ.get("GROWW_API_KEY", "")  # the daily access token (Bearer)
+GROWW_API_KEY = os.environ.get("GROWW_API_KEY", "")  # daily access token (Bearer)
 GROWW_API_SECRET = os.environ.get("GROWW_API_SECRET", "")  # not used by this endpoint directly
 
 GROWW_API_BASE = "https://api.groww.in/v1"
 
+# Map our internal interval-in-minutes to Groww's string format
+_INTERVAL_MAP = {
+    1: "1minute",
+    5: "5minute",
+    15: "15minute",
+    30: "30minute",
+    60: "60minute",
+}
 
-def fetch_candles(trading_symbol, start_time, end_time, exchange="NSE", segment="CASH"):
+
+def fetch_candles(symbol, start_time, end_time, exchange="NSE", segment="CASH", interval_minutes=5):
     """
+    symbol: plain trading symbol, e.g. "NIFTY", "RELIANCE" (gets combined
+            into groww_symbol as "EXCHANGE-SYMBOL").
     start_time / end_time: 'YYYY-MM-DD HH:MM:SS' strings (IST, market hours).
+    interval_minutes: one of 1, 5, 15, 30, 60.
     Returns a list of {timestamp, open, high, low, close, volume} dicts,
     or raises RuntimeError with details on failure.
     """
     if not GROWW_API_KEY:
         raise RuntimeError("GROWW_API_KEY not set (expected in environment / GitHub secret).")
 
+    candle_interval = _INTERVAL_MAP.get(interval_minutes)
+    if not candle_interval:
+        raise ValueError(f"Unsupported interval_minutes: {interval_minutes}")
+
+    groww_symbol = f"{exchange}-{symbol}"
     params = urllib.parse.urlencode({
         "exchange": exchange,
         "segment": segment,
-        "trading_symbol": trading_symbol,
+        "groww_symbol": groww_symbol,
         "start_time": start_time,
         "end_time": end_time,
+        "candle_interval": candle_interval,
     })
-    url = f"{GROWW_API_BASE}/historical/candle/range?{params}"
+    url = f"{GROWW_API_BASE}/historical/candles?{params}"
 
     req = urllib.request.Request(url, headers={
         "Accept": "application/json",
@@ -102,12 +113,9 @@ def fetch_candles(trading_symbol, start_time, end_time, exchange="NSE", segment=
 
 
 if __name__ == "__main__":
-    # Quick connectivity test — fetches today's NIFTY candles (index quoting
-    # may need a different trading_symbol/exchange convention; adjust once
-    # a real test run shows the correct symbol format for indices).
     today = datetime.now().strftime("%Y-%m-%d")
     try:
-        candles = fetch_candles("NIFTY", f"{today} 09:15:00", f"{today} 15:30:00")
+        candles = fetch_candles("NIFTY", f"{today} 09:15:00", f"{today} 15:30:00", interval_minutes=5)
         print(f"Fetched {len(candles)} candles.")
         if candles:
             print("First:", candles[0])
