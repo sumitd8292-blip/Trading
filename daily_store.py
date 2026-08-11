@@ -57,7 +57,7 @@ def _write_all(path, entries):
             f.write(json.dumps(e) + "\n")
 
 
-def append_intraday_candles(symbol, candles):
+def append_intraday_candles(symbol, candles, interval_label="5min"):
     """
     candles: list of {timestamp, open, high, low, close} dicts, possibly
     spanning multiple trading days (auto-split by date).
@@ -70,7 +70,7 @@ def append_intraday_candles(symbol, candles):
         d = c["timestamp"][:10]
         by_day.setdefault(d, []).append(c)
 
-    path = _path(f"{symbol}_5min_log.jsonl")
+    path = _path(f"{symbol}_{interval_label}_log.jsonl")
     existing = _read_all(path)
     existing_by_date = {e["date"]: e for e in existing}
 
@@ -89,7 +89,7 @@ def append_intraday_candles(symbol, candles):
 
     # rebuild EOD log from the (now up to date) 5-min log, only for changed days
     if written:
-        eod_path = _path(f"{symbol}_eod_log.jsonl")
+        eod_path = _path(f"{symbol}_eod_log.jsonl")  # EOD summary stays interval-agnostic (uses whichever call has most granular/complete data for that day)
         eod_existing = {e["date"]: e for e in _read_all(eod_path)}
         for date_str in written:
             day_candles = existing_by_date[date_str]["candles"]
