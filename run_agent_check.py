@@ -54,7 +54,9 @@ def main():
 
 
 def groww_test():
-    """Quick connectivity test for the Groww direct API, safe no-op if not configured."""
+    """Quick connectivity test for the Groww direct API, safe no-op if not configured.
+    Sends the result to Telegram too, since GitHub Actions logs aren'''t directly
+    viewable from the Claude sandbox (network egress restriction)."""
     import groww_api
     from datetime import datetime
     if not groww_api.GROWW_API_KEY:
@@ -63,9 +65,14 @@ def groww_test():
     today = datetime.now().strftime("%Y-%m-%d")
     try:
         candles = groww_api.fetch_candles("NIFTY", f"{today} 09:15:00", f"{today} 15:30:00")
-        print(f"Groww API test: fetched {len(candles)} candles for NIFTY today.")
+        msg = f"Groww API test SUCCESS: fetched {len(candles)} NIFTY candles for {today}."
+        if candles:
+            msg += f"\nFirst: {candles[0]}\nLast: {candles[-1]}"
+        print(msg)
     except Exception as e:
-        print("Groww API test FAILED:", e)
+        msg = f"Groww API test FAILED: {e}"
+        print(msg)
+    send_telegram_message("🧪 " + msg)
 
 
 if __name__ == "__main__":
