@@ -1,67 +1,116 @@
 """
-Groww Direct API — Live Data Fetcher (STUB, awaiting API key from Saim)
-------------------------------------------------------------------------
-This is SEPARATE from GrowwMCP. GrowwMCP only works inside Claude chat
-sessions. This module is meant to be called from GitHub Actions (or any
-external server) using Groww's own paid Trading/Data API, so live data
-fetching can run WITHOUT a Claude session open.
+Groww Direct API — Live Data Fetcher
+-------------------------------------
+SEPARATE from GrowwMCP. GrowwMCP only works inside Claude chat sessions.
+This module uses Groww's own paid Trading/Data API (₹499+GST/month
+subscription, api.groww.in) so live data fetching can eventually run from
+GitHub Actions without a Claude session open.
 
-WHERE THE KEY GOES ONCE SAIM SENDS IT:
-  1. Do NOT hardcode it here. Add it as a GitHub repo secret, same way
-     TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID were added:
-       GitHub repo -> Settings -> Secrets and variables -> Actions
-       -> New repository secret
-       Name: GROWW_API_KEY   (and GROWW_API_SECRET if Groww issues one)
-  2. Add matching `env:` lines in .github/workflows/agent_run.yml (same
-     pattern as the existing TELEGRAM_* secrets there).
-  3. Fill in fetch_1min_candles() below using Groww's actual API docs
-     (endpoint URL, auth header format, response schema) once the key
-     is available — the exact request shape isn't known yet, this is a
-     placeholder showing the intended interface.
+*** IMPORTANT LIMITATION (found 11 Aug 2026) ***
+Groww's access token EXPIRES DAILY at 6 AM IST. This means the token Saim
+provides needs to be regenerated and re-uploaded to GitHub Secrets every
+day before it can be used — full unattended 24x7 automation is NOT
+possible with this token type alone. Options going forward:
+  1. Saim manually regenerates + sends the token each morning (Claude
+     updates the GitHub secret each time) — simple but still needs a
+     human step daily.
+  2. Investigate whether Groww offers a longer-lived API key + secret
+     pair for programmatic (non-interactive) daily refresh — check
+     Groww's API docs "User" / "Annexures" sections for a token-refresh
+     endpoint using GROWW_API_SECRET.
+Not yet resolved — flagging here for the next work session.
 
-GOAL ONCE WIRED UP:
-  - Fetch 1-minute NIFTY/BANKNIFTY candles (Saim's new requirement,
-    10 Aug 2026 — finer granularity than 5-min, because market
-    character is shifting: more AI-driven trading + changing FII
-    session patterns).
-  - Feed those candles into daily_store.append_intraday_candles() and
-    engine.score_setup(), same as the GrowwMCP-sourced data currently
-    does — so run_agent_check.py can run fully on GitHub Actions
-    without needing a Claude session to supply data.
+ENDPOINT (per Groww's documented cURL API, groww.in/trade-api/docs/curl):
+  GET https://api.groww.in/v1/historical/candle/range
+    ?exchange=NSE&segment=CASH&trading_symbol=NIFTY
+    &start_time=YYYY-MM-DD HH:MM:SS&end_time=YYYY-MM-DD HH:MM:SS
+  Headers:
+    Authorization: Bearer {ACCESS_TOKEN}
+    Accept: application/json
+    X-API-VERSION: 1.0
+
+  NOTE: Groww's docs mark this endpoint "deprecated, use Get Historical
+  Candle Data instead" but did not surface the exact replacement path in
+  available documentation as of 11 Aug 2026 — using this one since it is
+  still live and documented with a full working example. Revisit if it
+  stops working.
+
+Response shape (documented):
+  {
+    "status": "SUCCESS",
+    "payload": {
+      "candles": [[epoch_seconds, open, high, low, close, volume], ...],
+      "interval_in_minutes": 5
+    }
+  }
 """
 
 import os
 import json
 import urllib.request
+import urllib.parse
+from datetime import datetime
 
-GROWW_API_KEY = os.environ.get("GROWW_API_KEY", "")
-GROWW_API_SECRET = os.environ.get("GROWW_API_SECRET", "")
+GROWW_API_KEY = os.environ.get("GROWW_API_KEY", "")  # the daily access token (Bearer)
+GROWW_API_SECRET = os.environ.get("GROWW_API_SECRET", "")  # not used by this endpoint directly
 
-# Placeholder — replace with Groww's actual documented endpoint once known.
-GROWW_API_BASE = "https://api.groww.in"  # NOT CONFIRMED YET
+GROWW_API_BASE = "https://api.groww.in/v1"
 
 
-def fetch_1min_candles(symbol, date_str):
+def fetch_candles(trading_symbol, start_time, end_time, exchange="NSE", segment="CASH"):
     """
-    Intended interface: returns a list of
-    {timestamp, open, high, low, close} dicts for one trading day at
-    1-minute resolution.
-
-    NOT YET IMPLEMENTED — needs Groww's actual API key + docs to fill in
-    the real request/response handling. Currently raises to make clear
-    this stub isn't wired up yet (avoids silently returning fake data).
+    start_time / end_time: 'YYYY-MM-DD HH:MM:SS' strings (IST, market hours).
+    Returns a list of {timestamp, open, high, low, close, volume} dicts,
+    or raises RuntimeError with details on failure.
     """
     if not GROWW_API_KEY:
-        raise RuntimeError(
-            "GROWW_API_KEY not set. Add it as a GitHub repo secret and "
-            "reference it in .github/workflows/agent_run.yml before using this."
-        )
-    raise NotImplementedError(
-        "fetch_1min_candles() needs to be filled in with Groww's actual "
-        "API request format once Saim provides the key + we have docs."
-    )
+        raise RuntimeError("GROWW_API_KEY not set (expected in environment / GitHub secret).")
+
+    params = urllib.parse.urlencode({
+        "exchange": exchange,
+        "segment": segment,
+        "trading_symbol": trading_symbol,
+        "start_time": start_time,
+        "end_time": end_time,
+    })
+    url = f"{GROWW_API_BASE}/historical/candle/range?{params}"
+
+    req = urllib.request.Request(url, headers={
+        "Accept": "application/json",
+        "Authorization": f"Bearer {GROWW_API_KEY}",
+        "X-API-VERSION": "1.0",
+    })
+
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode())
+    except urllib.error.HTTPError as e:
+        raise RuntimeError(f"Groww API HTTP error {e.code}: {e.read().decode()[:500]}")
+    except Exception as e:
+        raise RuntimeError(f"Groww API request failed: {e}")
+
+    if data.get("status") != "SUCCESS":
+        raise RuntimeError(f"Groww API returned non-success: {data}")
+
+    raw_candles = data.get("payload", {}).get("candles", [])
+    out = []
+    for c in raw_candles:
+        ts_epoch, o, h, l, close, vol = c
+        ts = datetime.fromtimestamp(ts_epoch).strftime("%Y-%m-%dT%H:%M:%S")
+        out.append({"timestamp": ts, "open": o, "high": h, "low": l, "close": close, "volume": vol})
+    return out
 
 
 if __name__ == "__main__":
-    print("GROWW_API_KEY set:", bool(GROWW_API_KEY))
-    print("This module is a stub — see docstring for wiring instructions.")
+    # Quick connectivity test — fetches today's NIFTY candles (index quoting
+    # may need a different trading_symbol/exchange convention; adjust once
+    # a real test run shows the correct symbol format for indices).
+    today = datetime.now().strftime("%Y-%m-%d")
+    try:
+        candles = fetch_candles("NIFTY", f"{today} 09:15:00", f"{today} 15:30:00")
+        print(f"Fetched {len(candles)} candles.")
+        if candles:
+            print("First:", candles[0])
+            print("Last:", candles[-1])
+    except Exception as e:
+        print("Test fetch failed:", e)

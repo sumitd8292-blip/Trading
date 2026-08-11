@@ -53,5 +53,21 @@ def main():
             print(symbol, "no signal for", day["date"])
 
 
+def groww_test():
+    """Quick connectivity test for the Groww direct API, safe no-op if not configured."""
+    import groww_api
+    from datetime import datetime
+    if not groww_api.GROWW_API_KEY:
+        print("GROWW_API_KEY not set, skipping Groww connectivity test.")
+        return
+    today = datetime.now().strftime("%Y-%m-%d")
+    try:
+        candles = groww_api.fetch_candles("NIFTY", f"{today} 09:15:00", f"{today} 15:30:00")
+        print(f"Groww API test: fetched {len(candles)} candles for NIFTY today.")
+    except Exception as e:
+        print("Groww API test FAILED:", e)
+
+
 if __name__ == "__main__":
+    groww_test()
     main()
