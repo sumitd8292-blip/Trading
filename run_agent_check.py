@@ -6,11 +6,14 @@ and sends it to Telegram. This does NOT fetch live data on its own —
 GrowwMCP only works inside Claude chat sessions — it scores whatever the
 most recent day already saved in data/daily_store/ is.
 
-Until live data fetching is wired up from an external source (e.g. Dhan
-API), new days must be pushed into data/daily_store/ from a Claude
-session (via daily_store.append_intraday_candles) before this script has
-anything fresh to score. Safe to run on a schedule regardless — it just
-re-reports the latest available day if nothing new has been added.
+Until Groww's direct API is fully working (subscription must be active —
+see groww_api.py notes) or another live source is wired up, new days must
+be pushed into data/daily_store/ from a Claude session before this script
+has anything fresh to score.
+
+DEDUP: alerts for the exact same (symbol, date, signal, score) combo are
+only sent ONCE — subsequent runs on unchanged data will not re-spam
+Telegram. Tracked in memory/alerted_signals.jsonl.
 """
 
 import sys
@@ -22,6 +25,8 @@ from engine import score_setup, log_signal
 from telegram_notify import send_telegram_message, format_signal_alert
 
 STORE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "daily_store")
+MEMORY_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "memory")
+ALERTED_PATH = os.path.join(MEMORY_DIR, "alerted_signals.jsonl")
 
 
 def latest_day(symbol):
@@ -33,7 +38,24 @@ def latest_day(symbol):
     return lines[-1] if lines else None
 
 
+def _alert_key(symbol, date, signal, score):
+    return f"{symbol}|{date}|{signal}|{score}"
+
+
+def _load_alerted():
+    if not os.path.exists(ALERTED_PATH):
+        return set()
+    with open(ALERTED_PATH) as f:
+        return set(line.strip() for line in f if line.strip())
+
+
+def _mark_alerted(key):
+    with open(ALERTED_PATH, "a") as f:
+        f.write(key + "\n")
+
+
 def main():
+    alerted = _load_alerted()
     for symbol in ["NIFTY", "BANKNIFTY"]:
         day = latest_day(symbol)
         if day is None:
@@ -45,17 +67,25 @@ def main():
         result = score_setup(closes, highs, lows)
         log_signal(symbol, result, note=f"GitHub Actions run, data date {day['date']}")
 
-        if result["signal"] != "NONE":
-            msg = format_signal_alert(symbol, result) + f"\n\nData date: {day['date']}"
-            send_result = send_telegram_message(msg)
-            print(symbol, "signal sent:", send_result.get("ok"))
-        else:
+        if result["signal"] == "NONE":
             print(symbol, "no signal for", day["date"])
+            continue
+
+        key = _alert_key(symbol, day["date"], result["signal"], result["score"])
+        if key in alerted:
+            print(symbol, "signal already alerted for", day["date"], "- skipping duplicate")
+            continue
+
+        msg = format_signal_alert(symbol, result) + f"\n\nData date: {day['date']}"
+        send_result = send_telegram_message(msg)
+        print(symbol, "signal sent:", send_result.get("ok"))
+        if send_result.get("ok"):
+            _mark_alerted(key)
 
 
 def groww_test():
     """Quick connectivity test for the Groww direct API, safe no-op if not configured.
-    Sends the result to Telegram too, since GitHub Actions logs aren'''t directly
+    Sends the result to Telegram too, since GitHub Actions logs aren't directly
     viewable from the Claude sandbox (network egress restriction)."""
     import groww_api
     from datetime import datetime
