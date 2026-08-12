@@ -22,6 +22,7 @@ import json
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from engine import score_setup, log_signal
+from price_momentum import momentum_bias
 from datetime import datetime
 from telegram_notify import send_telegram_message, format_signal_alert
 
@@ -77,7 +78,8 @@ def main():
         highs = [c["high"] for c in candles]
         lows = [c["low"] for c in candles]
         oi_bias = latest_oi_bias(symbol)
-        result = score_setup(closes, highs, lows, oi_bias=oi_bias)
+        vsa_bias = momentum_bias(candles)
+        result = score_setup(closes, highs, lows, oi_bias=oi_bias, vsa_bias=vsa_bias)
         log_signal(symbol, result, note=f"GitHub Actions run, data date {day['date']}")
 
         if result["signal"] == "NONE":

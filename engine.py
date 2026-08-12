@@ -81,7 +81,7 @@ DEFAULT_PARAMS = {
 }
 
 
-def score_setup(closes, highs, lows, params=None, oi_bias=None):
+def score_setup(closes, highs, lows, params=None, oi_bias=None, vsa_bias=None):
     """
     Returns a dict: {signal: LONG|SHORT|NONE, score: 0-10, reasons: [...]}
     oi_bias: optional dict from oi_orderflow.compute_oi_bias() — if given,
@@ -148,13 +148,30 @@ def score_setup(closes, highs, lows, params=None, oi_bias=None):
     else:
         reasons.append("OI order-flow: NOT YET INTEGRATED (0/2)")
 
+    # Price-momentum / VSA order-flow-proxy layer (added 12 Aug 2026)
+    if signal != "NONE" and vsa_bias is not None and vsa_bias.get("lean") != "NEUTRAL":
+        v_lean = vsa_bias.get("lean")
+        if (signal == "LONG" and v_lean == "BULLISH") or (signal == "SHORT" and v_lean == "BEARISH"):
+            score += 1
+            recent = vsa_bias.get("recent") or {}
+            reasons.append(f"Price-momentum (VSA) AGREES: {v_lean} "
+                            f"({vsa_bias.get('bullish_signals')} bullish vs "
+                            f"{vsa_bias.get('bearish_signals')} bearish bars recently, "
+                            f"last: {recent.get('label')}) (+1/1)")
+        else:
+            reasons.append(f"Price-momentum (VSA) DISAGREES: {v_lean} lean vs {signal} signal (0/1)")
+    elif vsa_bias is not None:
+        reasons.append("Price-momentum (VSA): neutral/no volume data yet (0/1)")
+    else:
+        reasons.append("Price-momentum (VSA): NOT YET INTEGRATED (0/1)")
+
     reasons.append("Greeks (Delta/Theta): NOT YET INTEGRATED (0/1)")
     reasons.append("SMC structure: NOT YET INTEGRATED (0/1)")
 
     return {
         "signal": signal,
         "score": score,
-        "max_possible_today": 8,   # price+momentum(5) + OI(2) + reserved(1); out of eventual 10
+        "max_possible_today": 9,   # price+momentum(5) + OI(2) + VSA(1) + reserved(1); out of eventual 10
         "sl_points": p["sl_points"],
         "target_points": p["target_points"],
         "reasons": reasons,

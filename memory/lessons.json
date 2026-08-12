@@ -2,7 +2,10 @@
   "meta": {
     "created": "2026-08-09",
     "purpose": "Pre-loaded historical lessons so the agent starts with experience instead of cold-starting from zero.",
-    "data_sources": ["GrowwMCP (NIFTY daily 2020-2026, NIFTY 5-min last 90 days)", "NSE historical CSV exports (NIFTY 50 + NIFTY BANK daily 2019-2026, user-provided)"]
+    "data_sources": [
+      "GrowwMCP (NIFTY daily 2020-2026, NIFTY 5-min last 90 days)",
+      "NSE historical CSV exports (NIFTY 50 + NIFTY BANK daily 2019-2026, user-provided)"
+    ]
   },
   "regime_history": {
     "2020": "COVID crash + V-shaped recovery. Extreme volatility.",
@@ -10,7 +13,7 @@
     "2022": "Choppy/bear correction (rate hikes, FII selling). Daily EMA20 crossover: 50% win rate.",
     "2023": "Strong sustained bull trend. Daily EMA20 crossover: 66.7% win rate (best regime for simple trend-following).",
     "2024": "Trend broke down for simple price-only signals. Daily EMA20 crossover: 12.5% win rate (sharp degradation).",
-    "2025": "Still choppy for pure price signals overall, but RSI-confirmed daily EMA setups did comparatively better (57.1% win rate) — small sample, low confidence.",
+    "2025": "Still choppy for pure price signals overall, but RSI-confirmed daily EMA setups did comparatively better (57.1% win rate) \u2014 small sample, low confidence.",
     "2026_ytd": "Correction phase, -6% YTD as of Aug. Pure price-momentum signals remain unreliable (22.2% daily win rate)."
   },
   "strategy_tests": [
@@ -32,7 +35,7 @@
     {
       "name": "Intraday RSI oversold(<30)/overbought(>70) recovery-through-50",
       "period": "last 90 days",
-      "result": "High accuracy (60% WR) but too rare (0.28 trades/day) — fails Saim's frequency requirement."
+      "result": "High accuracy (60% WR) but too rare (0.28 trades/day) \u2014 fails Saim's frequency requirement."
     },
     {
       "name": "Intraday RSI 40/60 (tighter band) + EMA20 trend filter + SL15/TGT25",
@@ -49,8 +52,23 @@
   "key_conclusions": [
     "No pure price-action-only signal tested so far is reliably profitable on its own in the current (2024-2026) market regime.",
     "The 40/60 RSI + EMA20 + SL15/TGT25 setup is the best baseline so far and should be the engine's default until better data (FII/DII, OI) proves a better combination.",
-    "RSI parameter tuning alone (band width, oversold/overbought thresholds) trades off frequency against accuracy — no single RSI variant solved both at once. This confirms additional non-price confirmation layers (FII/DII bias, OI order-flow) are necessary, not optional.",
+    "RSI parameter tuning alone (band width, oversold/overbought thresholds) trades off frequency against accuracy \u2014 no single RSI variant solved both at once. This confirms additional non-price confirmation layers (FII/DII bias, OI order-flow) are necessary, not optional.",
     "ORB-style breakout strategies need a wider opening range or added confirmation before they're viable; the narrow 5-min range version should not be reused as-is.",
     "Missing pieces still to integrate: FII/DII daily positioning bias, options OI order-flow proxy, Greeks (Delta/Theta), SMC-based structure. Until these are added, agent's max achievable score is capped at 6/10 (see engine.py score_setup)."
-  ]
+  ],
+  "price_momentum_vsa": {
+    "added": "12 Aug 2026",
+    "concept": "Volume Spread Analysis (VSA) \u2014 reads EFFORT (volume) vs RESULT (candle spread + close position) to infer institutional buying/selling activity without needing true Level-2 order-book data",
+    "core_signals": {
+      "no_demand": "narrow-spread UP candle on low volume -> rally lacks real buying, bearish esp. at resistance",
+      "no_supply": "narrow-spread DOWN candle on low volume -> decline lacks real selling, bullish esp. at support",
+      "buying_climax": "wide-spread UP candle on ultra-high volume, closes off the high -> smart money selling into retail euphoria, bearish, marks potential tops",
+      "selling_climax": "wide-spread DOWN candle on ultra-high volume, closes off the low -> panic selling absorbed by smart money, bullish, marks potential bottoms",
+      "absorption": "high volume but narrow spread (price can't move despite heavy activity) -> a large player is defending that level; direction depends on which side (bullish if absorbing sell-offs at support, bearish if absorbing buy pressure at resistance)",
+      "strong_demand_supply": "high volume + wide spread + close in the direction of the move (>65% toward high for up, <35% toward low for down) -> genuine, validated move, likely to continue"
+    },
+    "implementation": "price_momentum.py \u2014 classify_bar() scores a single candle, momentum_bias() aggregates the last N candles into a BULLISH/BEARISH/NEUTRAL lean",
+    "data_limitation": "NIFTY/BANKNIFTY index candles from GrowwMCP do not currently include volume (indices aren't directly traded, only futures/options are) \u2014 this layer returns NEUTRAL/no-signal gracefully until volume data is wired in (e.g. from Groww's direct API fetch_candles(), which does return volume, or from NIFTY futures data instead of the index)",
+    "not_yet_wired_into_engine_scoring": "as of 12 Aug 2026 this exists as a standalone module, ready to plug into engine.py's score_setup() as another confirmation layer once volume data is reliably available"
+  }
 }

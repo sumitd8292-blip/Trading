@@ -51,3 +51,18 @@ Currently OI snapshots are added manually (Saim uploads a CSV, Claude parses
 and stores it via daily_store.append_options_snapshot) — not yet a live feed.
 run_agent_check.py automatically picks up the latest stored snapshot per
 symbol when scoring, so once a CSV is loaded it factors into every run.
+
+## Price Momentum / VSA Order-Flow-Proxy Layer (added 12 Aug 2026)
+`price_momentum.py` implements Volume Spread Analysis (VSA) — reads EFFORT
+(volume) vs RESULT (candle spread + close position) to detect no-demand,
+no-supply, buying/selling climax, and absorption patterns, which answer
+"what happens inside price when orders/triggers hit" without needing true
+Level-2 order-book data. Wired into engine.py for +1 point when it agrees
+with the price/momentum signal direction. Max score now 9/10 (was 8/10).
+
+**Current limitation**: NIFTY/BANKNIFTY index candles from GrowwMCP don't
+include volume yet (indices aren't directly traded) — this layer correctly
+reports NEUTRAL/no-signal until volume data is wired in (e.g. from
+groww_api.py's fetch_candles(), which does return volume, or NIFTY futures
+data). See memory/lessons.json -> price_momentum_vsa for full concept
+documentation.
