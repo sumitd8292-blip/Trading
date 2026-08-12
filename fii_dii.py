@@ -1,115 +1,86 @@
 """
-FII/DII Daily Positioning Layer
----------------------------------
-Fetches FII (Foreign Institutional Investor) and DII (Domestic
-Institutional Investor) daily net buy/sell activity from NSE, via the
-`nsefin` PyPI package (pip install nsefin).
+FII/DII Daily Positioning Layer — MANUAL INPUT (as of 12 Aug 2026)
+----------------------------------------------------------------------
+Automated NSE scraping was tried and abandoned:
+  - nseindia.com is not reachable from the Claude sandbox (network allowlist)
+  - The `nsefin` package has a URL-construction bug (missing "/" between
+    BASE and path) that could not be patched around because its Endpoints
+    class is a frozen dataclass (setattr silently fails)
+  - Even if fixed, NSE's anti-bot protections make unattended scraping
+    fragile from GitHub Actions / a VPS anyway
+Decision (12 Aug 2026): use MANUAL data entry instead — same reliable
+pattern as the options-OI CSV layer (oi_orderflow.py). Saim provides the
+day's FII/DII net figures (from NSE's site, a broker app, or any source
+he trusts), Claude records them here.
 
-*** IMPORTANT — NETWORK REQUIREMENT ***
-nseindia.com is NOT reachable from the Claude sandbox (not in the
-network allowlist) — this module cannot be tested from within a Claude
-session's bash tool. It CAN be tested from:
-  - GitHub Actions (open internet access) — this is the intended runtime
-  - The VPS once deployed (see deploy/deploy.md)
-Test via a GitHub Actions run and check the Telegram/log output, same
-pattern used for groww_api.py and Telegram testing.
-
-*** BUG WORKAROUND ***
-nsefin's NSEClient.get_fii_dii_activity() (and other endpoints) build
-URLs as f"{BASE}{path}" where BASE="https://www.nseindia.com" and
-path="api/fiidiiTradeReact" (no leading slash) — this produces the
-broken URL "https://www.nseindia.comapi/fiidiiTradeReact". _get_client()
-below monkey-patches the endpoints object to prepend "/" to any path
-missing one, fixing this without needing to fork the library.
-
-DATA SHAPE (per NSE's fiidiiTradeReact endpoint): a list of daily rows,
-each typically {category: "FII/FPI" | "DII", date: "DD-MMM-YYYY",
-buyValue: <crores>, sellValue: <crores>, netValue: <crores>}.
+Storage: memory/fii_dii_manual.jsonl — one line per day, appended via
+record_fii_dii(). The runner reads the latest entry automatically.
 """
 
-import os
 import json
+import os
 from datetime import datetime
 
 BASE = os.path.dirname(os.path.abspath(__file__))
+STORE_PATH = os.path.join(BASE, "memory", "fii_dii_manual.jsonl")
 
 
-def _get_client():
-    import nsefin
-    client = nsefin.NSEClient()
-
-    # Patch the buggy path-joining bug (missing slash between BASE and path)
-    orig_get = client._get if hasattr(client, "_get") else None
-    # Simplest safe fix: ensure every Endpoints string attribute starts with "/"
-    for attr_name in dir(client.endpoints):
-        if attr_name.startswith("_"):
-            continue
-        val = getattr(client.endpoints, attr_name, None)
-        if isinstance(val, str) and val.startswith("api/"):
-            try:
-                setattr(client.endpoints, attr_name, "/" + val)
-            except Exception:
-                pass  # some may be read-only / dataclass frozen; ignore
-
-    return client
-
-
-def fetch_fii_dii_activity():
+def record_fii_dii(date_str, fii_net_crores, dii_net_crores, source_note=""):
     """
-    Returns the raw FII/DII activity data from NSE (list of dicts), or
-    raises an exception with details if the fetch fails (network,
-    NSE anti-bot block, or parsing issue).
+    Appends a manually-provided day's FII/DII net figures (in Rs. Crores;
+    positive = net buying, negative = net selling). Idempotent by date —
+    re-recording the same date overwrites the earlier entry.
     """
-    client = _get_client()
-    return client.get_fii_dii_activity()
+    entries = []
+    if os.path.exists(STORE_PATH):
+        with open(STORE_PATH) as f:
+            entries = [json.loads(l) for l in f if l.strip()]
+    entries = [e for e in entries if e["date"] != date_str]
+    entries.append({
+        "date": date_str,
+        "fii_net_crores": fii_net_crores,
+        "dii_net_crores": dii_net_crores,
+        "source_note": source_note,
+        "recorded_at": datetime.now().isoformat(),
+    })
+    entries.sort(key=lambda e: e["date"])
+    with open(STORE_PATH, "w") as f:
+        for e in entries:
+            f.write(json.dumps(e) + "\n")
+    return entries[-1]
 
 
-def compute_fii_bias(rows, lookback_days=3):
+def get_latest_manual_fii_bias(lookback_days=3):
     """
-    rows: the raw list from fetch_fii_dii_activity()
-    Returns a bias dict: net FII flow direction over the last
-    `lookback_days` trading days -> BULLISH (net buying) / BEARISH (net
-    selling) / NEUTRAL, plus the raw recent net values for transparency.
+    Returns a bias dict from the most recent `lookback_days` manually
+    recorded entries: BULLISH (net FII buying) / BEARISH (net FII selling)
+    / NEUTRAL, or None if nothing has been recorded yet.
     """
-    if not rows:
+    if not os.path.exists(STORE_PATH):
+        return None
+    with open(STORE_PATH) as f:
+        entries = [json.loads(l) for l in f if l.strip()]
+    if not entries:
         return None
 
-    fii_rows = [r for r in rows if "FII" in str(r.get("category", "")).upper()
-                or "FPI" in str(r.get("category", "")).upper()]
-    fii_rows = fii_rows[-lookback_days:] if len(fii_rows) > lookback_days else fii_rows
-    if not fii_rows:
-        return None
+    recent = entries[-lookback_days:]
+    total_fii_net = sum(e["fii_net_crores"] for e in recent)
 
-    net_values = []
-    for r in fii_rows:
-        nv = r.get("netValue")
-        if nv is None:
-            buy = r.get("buyValue", 0) or 0
-            sell = r.get("sellValue", 0) or 0
-            nv = buy - sell
-        net_values.append(float(nv))
-
-    total_net = sum(net_values)
-    if total_net > 0:
+    if total_fii_net > 0:
         lean = "BULLISH"
-    elif total_net < 0:
+    elif total_fii_net < 0:
         lean = "BEARISH"
     else:
         lean = "NEUTRAL"
 
     return {
         "lean": lean,
-        "total_net_crores": round(total_net, 1),
-        "days_considered": len(net_values),
-        "recent_net_values": [round(v, 1) for v in net_values],
+        "total_net_crores": round(total_fii_net, 1),
+        "days_considered": len(recent),
+        "recent_dates": [e["date"] for e in recent],
     }
 
 
 if __name__ == "__main__":
-    try:
-        rows = fetch_fii_dii_activity()
-        print(f"Fetched {len(rows)} FII/DII rows.")
-        bias = compute_fii_bias(rows)
-        print(json.dumps(bias, indent=2))
-    except Exception as e:
-        print(f"FII/DII fetch FAILED: {type(e).__name__}: {e}")
+    bias = get_latest_manual_fii_bias()
+    print(json.dumps(bias, indent=2) if bias else "No manual FII/DII data recorded yet.")

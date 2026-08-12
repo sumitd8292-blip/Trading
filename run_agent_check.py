@@ -23,7 +23,7 @@ import json
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from engine import score_setup, log_signal
 from price_momentum import momentum_bias
-from fii_dii import fetch_fii_dii_activity, compute_fii_bias
+from fii_dii import get_latest_manual_fii_bias
 from datetime import datetime
 from telegram_notify import send_telegram_message, format_signal_alert
 
@@ -69,19 +69,14 @@ def _mark_alerted(key):
 
 
 def get_fii_bias():
-    """Fetches FII/DII bias once per run; returns None gracefully on any failure
-    (network block, NSE anti-bot, parsing issue) rather than crashing the run.
-    Also sends the result to Telegram for visibility (can't view GH Actions logs
-    from the Claude sandbox)."""
-    try:
-        rows = fetch_fii_dii_activity()
-        bias = compute_fii_bias(rows)
-        send_telegram_message(f"🧪 FII/DII test SUCCESS: {bias}")
-        return bias
-    except Exception as e:
-        send_telegram_message(f"🧪 FII/DII test FAILED: {type(e).__name__}: {e}")
-        print(f"FII/DII fetch failed (non-fatal): {e}")
-        return None
+    """Reads the most recent MANUALLY-provided FII/DII snapshot (Saim uploads
+    NSE's daily figures, Claude parses/stores them — same pattern as the OI
+    order-flow CSVs). Live NSE scraping was tried and abandoned (12 Aug 2026):
+    nseindia.com is blocked from Claude's sandbox, and the nsefin library has
+    a URL-construction bug (frozen dataclass prevented the monkey-patch fix)
+    plus NSE's anti-bot protections make automated fetching unreliable anyway.
+    Returns None quietly (no Telegram spam) if no manual data has been loaded yet."""
+    return get_latest_manual_fii_bias()
 
 
 def main():

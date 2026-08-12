@@ -66,3 +66,16 @@ reports NEUTRAL/no-signal until volume data is wired in (e.g. from
 groww_api.py's fetch_candles(), which does return volume, or NIFTY futures
 data). See memory/lessons.json -> price_momentum_vsa for full concept
 documentation.
+
+## FII/DII Layer — Manual Input (12 Aug 2026)
+Automated NSE scraping was tried and abandoned: nseindia.com isn't
+reachable from Claude's sandbox, and the `nsefin` library has an
+unfixable-via-monkeypatch URL bug (frozen dataclass). Repeated automated
+attempts also kept failing from GitHub Actions and spamming Telegram with
+failure messages — removed.
+
+Now uses manual entry (fii_dii.py): Saim provides the day's FII/DII net
+figures from any source he trusts, Claude records them via
+`record_fii_dii()` into memory/fii_dii_manual.jsonl. The runner
+automatically picks up the latest recorded entry for scoring — same
+reliable pattern as the options-OI CSV layer.
