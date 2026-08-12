@@ -118,3 +118,18 @@ SMC) are wired in.
 Telegram alerts now show **CALL** for LONG signals and **PUT** for SHORT
 signals (Saim's trading convention — buy Call to go long, buy Put to go
 short), alongside the internal LONG/SHORT label for clarity.
+
+## 1-Minute Data Collection (added 12 Aug 2026)
+`daily_store.append_intraday_candles()` now supports `interval_label="1min"`
+(previously only 5min was actually used, though the parameter existed).
+Confirmed working: 1-minute NIFTY candles fetched via GrowwMCP (750-1125
+candles for 1-3 trading days), stored under
+`data/daily_store/{SYMBOL}_1min_log.jsonl`, and scored through the full
+5-layer engine successfully. Saim's 11 Aug request for finer granularity
+(market character shifting — more AI-driven trading, changing FII
+patterns) is now technically supported.
+
+Currently populated manually per Claude session (same GrowwMCP-only
+limitation as live data generally) — automating this to run every minute
+without a session open requires the VPS deployment (continuous_runner.py
+already defaults to 1-minute loops, see deploy/deploy.md).
