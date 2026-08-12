@@ -33,6 +33,7 @@ from telegram_notify import send_telegram_message, format_signal_alert
 from groww_api import fetch_candles
 from run_agent_check import latest_oi_bias, _alert_key, _load_alerted, _mark_alerted
 from price_momentum import momentum_bias
+from smc import smc_bias as get_smc_bias
 
 LOOP_INTERVAL_SECONDS = 60  # 1-minute granularity
 MARKET_OPEN = dtime(9, 15)
@@ -71,7 +72,8 @@ def run_once():
         lows = [c["low"] for c in candles]
         oi_bias = latest_oi_bias(symbol)
         vsa_bias = momentum_bias(candles)
-        result = score_setup(closes, highs, lows, oi_bias=oi_bias, vsa_bias=vsa_bias)
+        s_bias = get_smc_bias(candles)
+        result = score_setup(closes, highs, lows, oi_bias=oi_bias, vsa_bias=vsa_bias, smc_bias=s_bias)
         log_signal(symbol, result, note=f"VPS continuous run, {today}")
 
         if result["signal"] == "NONE":

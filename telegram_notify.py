@@ -34,8 +34,14 @@ def send_telegram_message(text, bot_token=None, chat_id=None):
         return {"ok": False, "error": str(e)}
 
 
+# Internal signal -> option-side label mapping (per Saim's convention,
+# 12 Aug 2026): LONG means buy a Call option, SHORT means buy a Put option.
+_OPTION_LABEL = {"LONG": "CALL", "SHORT": "PUT"}
+
+
 def format_signal_alert(symbol, result):
     signal = result.get("signal", "NONE")
+    option_label = _OPTION_LABEL.get(signal, signal)
     score = result.get("score", 0)
     maxs = result.get("max_possible_today", 6)
     sl = result.get("sl_points")
@@ -44,7 +50,7 @@ def format_signal_alert(symbol, result):
     return (
         f"<b>Order-Flow Agent Signal</b>\n"
         f"Symbol: {symbol}\n"
-        f"Signal: <b>{signal}</b>\n"
+        f"Signal: <b>{option_label}</b> ({signal})\n"
         f"Score: {score}/{maxs}\n"
         f"SL: {sl} pts | Target: {tgt} pts\n\n"
         f"{reasons}\n\n"

@@ -100,3 +100,21 @@ Currently populated manually (same pattern as OI/FII-DII layers) via
 `daily_store.append_greeks_snapshot()` — automating this requires a live
 Claude session pulling fresh Greeks each day since GrowwMCP only works
 inside chat sessions.
+
+## SMC Layer (added 12 Aug 2026) — completes the 5-layer rubric
+`smc.py` implements Smart Money Concepts using pure price action (no
+volume needed — complements the volume-dependent VSA layer):
+- **Swing points** (fractal highs/lows)
+- **BOS** (Break of Structure — continuation) vs **CHoCH** (Change of
+  Character — potential reversal, weighted 2x higher than BOS since it's
+  the stronger signal)
+- **FVG** (Fair Value Gaps) — 3-candle imbalances price often returns to
+
+Wired into engine.py for +1 (BOS) or +2 (CHoCH) points. **Max score now
+13** — all 5 planned layers (price+momentum, OI, VSA, FII/DII, Greeks,
+SMC) are wired in.
+
+## Alert labeling (12 Aug 2026)
+Telegram alerts now show **CALL** for LONG signals and **PUT** for SHORT
+signals (Saim's trading convention — buy Call to go long, buy Put to go
+short), alongside the internal LONG/SHORT label for clarity.

@@ -81,7 +81,7 @@ DEFAULT_PARAMS = {
 }
 
 
-def score_setup(closes, highs, lows, params=None, oi_bias=None, vsa_bias=None, fii_bias=None, greeks_bias=None):
+def score_setup(closes, highs, lows, params=None, oi_bias=None, vsa_bias=None, fii_bias=None, greeks_bias=None, smc_bias=None):
     """
     Returns a dict: {signal: LONG|SHORT|NONE, score: 0-10, reasons: [...]}
     oi_bias: optional dict from oi_orderflow.compute_oi_bias() — if given,
@@ -191,12 +191,26 @@ def score_setup(closes, highs, lows, params=None, oi_bias=None, vsa_bias=None, f
     else:
         reasons.append("Greeks (IV-skew): NOT YET INTEGRATED (0/1)")
 
-    reasons.append("SMC structure: NOT YET INTEGRATED (0/1)")
+    # SMC (market structure / BOS-CHoCH / FVG) layer (wired up 12 Aug 2026)
+    if signal != "NONE" and smc_bias is not None and smc_bias.get("lean") != "NEUTRAL":
+        s_lean = smc_bias.get("lean")
+        structure = smc_bias.get("structure") or {}
+        weight = 2 if structure.get("event") == "CHoCH" else 1  # CHoCH weighted higher than BOS
+        if (signal == "LONG" and s_lean == "BULLISH") or (signal == "SHORT" and s_lean == "BEARISH"):
+            score += weight
+            reasons.append(f"SMC AGREES: {s_lean} ({structure.get('event')} — "
+                            f"{'; '.join(smc_bias.get('reasons', []))}) (+{weight}/2)")
+        else:
+            reasons.append(f"SMC DISAGREES: {s_lean} lean vs {signal} signal (0/2)")
+    elif smc_bias is not None:
+        reasons.append("SMC: neutral, no clear BOS/CHoCH (0/2)")
+    else:
+        reasons.append("SMC structure: NOT YET INTEGRATED (0/2)")
 
     return {
         "signal": signal,
         "score": score,
-        "max_possible_today": 11,   # price+momentum(5) + OI(2) + VSA(1) + FII/DII(2) + Greeks(1) = 11; SMC layer still pending, will raise this further once added
+        "max_possible_today": 13,   # price+momentum(5) + OI(2) + VSA(1) + FII/DII(2) + Greeks(1) + SMC(2, CHoCH weighted) = 13; all planned layers now wired
         "sl_points": p["sl_points"],
         "target_points": p["target_points"],
         "reasons": reasons,

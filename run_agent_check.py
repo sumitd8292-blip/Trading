@@ -25,6 +25,7 @@ from engine import score_setup, log_signal
 from price_momentum import momentum_bias
 from fii_dii import get_latest_manual_fii_bias
 from greeks_bias import compute_greeks_bias
+from smc import smc_bias
 from datetime import datetime
 from telegram_notify import send_telegram_message, format_signal_alert
 
@@ -108,7 +109,8 @@ def main():
         oi_bias = latest_oi_bias(symbol)
         vsa_bias = momentum_bias(candles)
         g_bias = latest_greeks_bias(symbol)
-        result = score_setup(closes, highs, lows, oi_bias=oi_bias, vsa_bias=vsa_bias, fii_bias=fii_bias, greeks_bias=g_bias)
+        s_bias = smc_bias(candles)
+        result = score_setup(closes, highs, lows, oi_bias=oi_bias, vsa_bias=vsa_bias, fii_bias=fii_bias, greeks_bias=g_bias, smc_bias=s_bias)
         log_signal(symbol, result, note=f"GitHub Actions run, data date {day['date']}")
 
         if result["signal"] == "NONE":
