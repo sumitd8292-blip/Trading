@@ -1,0 +1,19 @@
+[Unit]
+Description=Order-Flow Agent - Continuous Runner
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/order-flow-agent
+ExecStart=/usr/bin/python3 /opt/order-flow-agent/continuous_runner.py
+Restart=always
+RestartSec=10
+Environment=TELEGRAM_BOT_TOKEN=REPLACE_ME
+Environment=TELEGRAM_CHAT_ID=REPLACE_ME
+Environment=GROWW_API_KEY=REPLACE_ME
+Environment=GROWW_API_SECRET=REPLACE_ME
+StandardOutput=append:/var/log/order-flow-agent.log
+StandardError=append:/var/log/order-flow-agent.log
+
+[Install]
+WantedBy=multi-user.target
