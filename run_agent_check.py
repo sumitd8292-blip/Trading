@@ -70,11 +70,16 @@ def _mark_alerted(key):
 
 def get_fii_bias():
     """Fetches FII/DII bias once per run; returns None gracefully on any failure
-    (network block, NSE anti-bot, parsing issue) rather than crashing the run."""
+    (network block, NSE anti-bot, parsing issue) rather than crashing the run.
+    Also sends the result to Telegram for visibility (can't view GH Actions logs
+    from the Claude sandbox)."""
     try:
         rows = fetch_fii_dii_activity()
-        return compute_fii_bias(rows)
+        bias = compute_fii_bias(rows)
+        send_telegram_message(f"🧪 FII/DII test SUCCESS: {bias}")
+        return bias
     except Exception as e:
+        send_telegram_message(f"🧪 FII/DII test FAILED: {type(e).__name__}: {e}")
         print(f"FII/DII fetch failed (non-fatal): {e}")
         return None
 
