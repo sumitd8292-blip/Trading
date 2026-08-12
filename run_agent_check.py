@@ -23,6 +23,7 @@ import json
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from engine import score_setup, log_signal
 from price_momentum import momentum_bias
+from fii_dii import fetch_fii_dii_activity, compute_fii_bias
 from datetime import datetime
 from telegram_notify import send_telegram_message, format_signal_alert
 
@@ -67,8 +68,21 @@ def _mark_alerted(key):
         f.write(key + "\n")
 
 
+def get_fii_bias():
+    """Fetches FII/DII bias once per run; returns None gracefully on any failure
+    (network block, NSE anti-bot, parsing issue) rather than crashing the run."""
+    try:
+        rows = fetch_fii_dii_activity()
+        return compute_fii_bias(rows)
+    except Exception as e:
+        print(f"FII/DII fetch failed (non-fatal): {e}")
+        return None
+
+
 def main():
     alerted = _load_alerted()
+    fii_bias = get_fii_bias()
+    print(f"FII/DII bias this run: {fii_bias}")
     for symbol in ["NIFTY", "BANKNIFTY"]:
         day = latest_day(symbol)
         if day is None:
@@ -79,7 +93,7 @@ def main():
         lows = [c["low"] for c in candles]
         oi_bias = latest_oi_bias(symbol)
         vsa_bias = momentum_bias(candles)
-        result = score_setup(closes, highs, lows, oi_bias=oi_bias, vsa_bias=vsa_bias)
+        result = score_setup(closes, highs, lows, oi_bias=oi_bias, vsa_bias=vsa_bias, fii_bias=fii_bias)
         log_signal(symbol, result, note=f"GitHub Actions run, data date {day['date']}")
 
         if result["signal"] == "NONE":

@@ -81,7 +81,7 @@ DEFAULT_PARAMS = {
 }
 
 
-def score_setup(closes, highs, lows, params=None, oi_bias=None, vsa_bias=None):
+def score_setup(closes, highs, lows, params=None, oi_bias=None, vsa_bias=None, fii_bias=None):
     """
     Returns a dict: {signal: LONG|SHORT|NONE, score: 0-10, reasons: [...]}
     oi_bias: optional dict from oi_orderflow.compute_oi_bias() — if given,
@@ -127,8 +127,19 @@ def score_setup(closes, highs, lows, params=None, oi_bias=None, vsa_bias=None):
     else:
         reasons.append("No confirmed price/momentum setup")
 
-    # Placeholder slots for layers not yet built
-    reasons.append("FII/DII bias: NOT YET INTEGRATED (0/2)")
+    # FII/DII bias layer (wired up 12 Aug 2026)
+    if signal != "NONE" and fii_bias is not None and fii_bias.get("lean") != "NEUTRAL":
+        f_lean = fii_bias.get("lean")
+        if (signal == "LONG" and f_lean == "BULLISH") or (signal == "SHORT" and f_lean == "BEARISH"):
+            score += 2
+            reasons.append(f"FII/DII AGREES: {f_lean} (net {fii_bias.get('total_net_crores')} Cr "
+                            f"over {fii_bias.get('days_considered')}d) (+2/2)")
+        else:
+            reasons.append(f"FII/DII DISAGREES: {f_lean} lean vs {signal} signal — treat with caution (0/2)")
+    elif fii_bias is not None:
+        reasons.append("FII/DII: neutral (0/2)")
+    else:
+        reasons.append("FII/DII bias: NOT YET INTEGRATED (0/2)")
 
     # OI order-flow layer (wired up 11 Aug 2026)
     if signal != "NONE" and oi_bias is not None:
@@ -171,7 +182,7 @@ def score_setup(closes, highs, lows, params=None, oi_bias=None, vsa_bias=None):
     return {
         "signal": signal,
         "score": score,
-        "max_possible_today": 9,   # price+momentum(5) + OI(2) + VSA(1) + reserved(1); out of eventual 10
+        "max_possible_today": 10,   # price+momentum(5) + OI(2) + VSA(1) + FII/DII(2) = 10/10, all layers now wired
         "sl_points": p["sl_points"],
         "target_points": p["target_points"],
         "reasons": reasons,
