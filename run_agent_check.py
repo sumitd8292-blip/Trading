@@ -24,6 +24,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from engine import score_setup, log_signal
 from price_momentum import momentum_bias
 from fii_dii import get_latest_manual_fii_bias
+from greeks_bias import compute_greeks_bias
 from datetime import datetime
 from telegram_notify import send_telegram_message, format_signal_alert
 
@@ -44,6 +45,19 @@ def latest_day(symbol):
 def latest_oi_bias(symbol):
     """Returns the most recent OI snapshot for this symbol, if any."""
     path = os.path.join(STORE_DIR, "options_oi_log.jsonl")
+    if not os.path.exists(path):
+        return None
+    with open(path) as f:
+        entries = [json.loads(l) for l in f if l.strip()]
+    matches = [e for e in entries if e.get("symbol") == symbol]
+    return matches[-1] if matches else None
+
+
+def latest_greeks_bias(symbol):
+    """Returns the most recent Greeks/IV-skew snapshot for this symbol, if any.
+    Snapshots are recorded manually (from a Claude session where GrowwMCP is
+    live) via greeks_bias.compute_greeks_bias() + daily_store.append_greeks_snapshot()."""
+    path = os.path.join(STORE_DIR, "greeks_log.jsonl")
     if not os.path.exists(path):
         return None
     with open(path) as f:
@@ -93,7 +107,8 @@ def main():
         lows = [c["low"] for c in candles]
         oi_bias = latest_oi_bias(symbol)
         vsa_bias = momentum_bias(candles)
-        result = score_setup(closes, highs, lows, oi_bias=oi_bias, vsa_bias=vsa_bias, fii_bias=fii_bias)
+        g_bias = latest_greeks_bias(symbol)
+        result = score_setup(closes, highs, lows, oi_bias=oi_bias, vsa_bias=vsa_bias, fii_bias=fii_bias, greeks_bias=g_bias)
         log_signal(symbol, result, note=f"GitHub Actions run, data date {day['date']}")
 
         if result["signal"] == "NONE":

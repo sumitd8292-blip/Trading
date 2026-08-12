@@ -79,3 +79,24 @@ figures from any source he trusts, Claude records them via
 `record_fii_dii()` into memory/fii_dii_manual.jsonl. The runner
 automatically picks up the latest recorded entry for scoring — same
 reliable pattern as the options-OI CSV layer.
+
+## Greeks / IV-Skew Layer (added 12 Aug 2026)
+`greeks_bias.py` reads option Greeks (Delta, IV, Theta) fetched via
+GrowwMCP's `get_greeks_for_fno_contract` and derives a directional lean
+from **IV skew** between OTM calls and OTM puts at matching |delta|
+(~0.3): higher OTM-put IV than OTM-call IV = downside-fear/hedging
+demand = BEARISH; higher OTM-call IV = upside demand = BULLISH.
+
+**GrowwMCP quirk discovered**: `get_greeks_for_fno_symbol` (whole-chain
+query) returns an empty result — must query individual strikes via
+`get_greeks_for_fno_contract` with explicit search_queries instead
+(works reliably, can batch several strikes per call).
+
+Wired into engine.py for +1 point when it agrees with the price signal.
+Max score now 11 (was 10) — SMC structure layer is the last one still
+pending, will raise this further once added.
+
+Currently populated manually (same pattern as OI/FII-DII layers) via
+`daily_store.append_greeks_snapshot()` — automating this requires a live
+Claude session pulling fresh Greeks each day since GrowwMCP only works
+inside chat sessions.

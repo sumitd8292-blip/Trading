@@ -81,7 +81,7 @@ DEFAULT_PARAMS = {
 }
 
 
-def score_setup(closes, highs, lows, params=None, oi_bias=None, vsa_bias=None, fii_bias=None):
+def score_setup(closes, highs, lows, params=None, oi_bias=None, vsa_bias=None, fii_bias=None, greeks_bias=None):
     """
     Returns a dict: {signal: LONG|SHORT|NONE, score: 0-10, reasons: [...]}
     oi_bias: optional dict from oi_orderflow.compute_oi_bias() — if given,
@@ -176,13 +176,27 @@ def score_setup(closes, highs, lows, params=None, oi_bias=None, vsa_bias=None, f
     else:
         reasons.append("Price-momentum (VSA): NOT YET INTEGRATED (0/1)")
 
-    reasons.append("Greeks (Delta/Theta): NOT YET INTEGRATED (0/1)")
+    # Greeks / IV-skew layer (wired up 12 Aug 2026)
+    if signal != "NONE" and greeks_bias is not None and greeks_bias.get("lean") != "NEUTRAL":
+        g_lean = greeks_bias.get("lean")
+        if (signal == "LONG" and g_lean == "BULLISH") or (signal == "SHORT" and g_lean == "BEARISH"):
+            score += 1
+            reasons.append(f"Greeks/IV-skew AGREES: {g_lean} (skew {greeks_bias.get('skew_pct')}%, "
+                            f"OTM put IV {greeks_bias.get('otm_put_iv')} vs "
+                            f"OTM call IV {greeks_bias.get('otm_call_iv')}) (+1/1)")
+        else:
+            reasons.append(f"Greeks/IV-skew DISAGREES: {g_lean} lean vs {signal} signal (0/1)")
+    elif greeks_bias is not None:
+        reasons.append(f"Greeks/IV-skew: neutral (skew {greeks_bias.get('skew_pct')}%) (0/1)")
+    else:
+        reasons.append("Greeks (IV-skew): NOT YET INTEGRATED (0/1)")
+
     reasons.append("SMC structure: NOT YET INTEGRATED (0/1)")
 
     return {
         "signal": signal,
         "score": score,
-        "max_possible_today": 10,   # price+momentum(5) + OI(2) + VSA(1) + FII/DII(2) = 10/10, all layers now wired
+        "max_possible_today": 11,   # price+momentum(5) + OI(2) + VSA(1) + FII/DII(2) + Greeks(1) = 11; SMC layer still pending, will raise this further once added
         "sl_points": p["sl_points"],
         "target_points": p["target_points"],
         "reasons": reasons,
