@@ -38,3 +38,16 @@ partial mid-session). Now overwrites when new data has more candles.
   1-minute granularity and fully-automated (no-Claude-session-needed) live data
 - FII/DII bias layer (Saim sending data as it becomes available)
 - Options OI order-flow, Greeks, SMC layers
+
+## OI Order-Flow Layer (added 11 Aug 2026)
+`oi_orderflow.py` parses NSE-style option-chain CSV exports (uploaded by Saim)
+and computes PCR, max-OI support/resistance strikes, and a BULLISH/BEARISH/
+NEUTRAL lean from OI-change direction. engine.py now awards +2 points when
+this lean AGREES with the price/momentum signal direction, notes disagreement
+explicitly ("treat with caution") without boosting score, and stays silent
+(0/2) if neutral or no data. Max achievable score is now 8/10 (was 6/10).
+
+Currently OI snapshots are added manually (Saim uploads a CSV, Claude parses
+and stores it via daily_store.append_options_snapshot) — not yet a live feed.
+run_agent_check.py automatically picks up the latest stored snapshot per
+symbol when scoring, so once a CSV is loaded it factors into every run.

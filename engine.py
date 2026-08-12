@@ -81,11 +81,15 @@ DEFAULT_PARAMS = {
 }
 
 
-def score_setup(closes, highs, lows, params=None):
+def score_setup(closes, highs, lows, params=None, oi_bias=None):
     """
     Returns a dict: {signal: LONG|SHORT|NONE, score: 0-10, reasons: [...]}
-    Pure price/momentum score for now (max achievable = 6/10 until
-    FII/DII + OI + Greeks + SMC layers are wired in).
+    oi_bias: optional dict from oi_orderflow.compute_oi_bias() — if given,
+    contributes up to 2 points when it AGREES with the price/momentum
+    signal direction (BULLISH agrees with LONG, BEARISH agrees with SHORT).
+    Max achievable score is currently 8/10 (price+momentum 5, OI 2, plus a
+    same-direction alignment bonus of 1) until FII/DII + Greeks + SMC are
+    wired in too.
     """
     p = params or DEFAULT_PARAMS
     if len(closes) < max(p["ema_period"], p["rsi_period"]) + 5:
@@ -123,16 +127,34 @@ def score_setup(closes, highs, lows, params=None):
     else:
         reasons.append("No confirmed price/momentum setup")
 
-    # Placeholder slots for future layers (currently contribute 0 — not yet built)
+    # Placeholder slots for layers not yet built
     reasons.append("FII/DII bias: NOT YET INTEGRATED (0/2)")
-    reasons.append("OI order-flow: NOT YET INTEGRATED (0/2)")
+
+    # OI order-flow layer (wired up 11 Aug 2026)
+    if signal != "NONE" and oi_bias is not None:
+        lean = oi_bias.get("lean", "NEUTRAL")
+        if (signal == "LONG" and lean == "BULLISH") or (signal == "SHORT" and lean == "BEARISH"):
+            score += 2
+            reasons.append(f"OI order-flow AGREES: {lean} lean (PCR {oi_bias.get('pcr')}, "
+                            f"resistance {oi_bias.get('resistance_strike')}, "
+                            f"support {oi_bias.get('support_strike')}) (+2/2)")
+        elif lean == "NEUTRAL":
+            reasons.append(f"OI order-flow NEUTRAL (PCR {oi_bias.get('pcr')}) (0/2)")
+        else:
+            reasons.append(f"OI order-flow DISAGREES: {lean} lean vs {signal} signal — "
+                            f"treat with caution (0/2)")
+    elif oi_bias is not None:
+        reasons.append(f"OI order-flow: no active signal to confirm ({oi_bias.get('lean')} lean noted) (0/2)")
+    else:
+        reasons.append("OI order-flow: NOT YET INTEGRATED (0/2)")
+
     reasons.append("Greeks (Delta/Theta): NOT YET INTEGRATED (0/1)")
     reasons.append("SMC structure: NOT YET INTEGRATED (0/1)")
 
     return {
         "signal": signal,
         "score": score,
-        "max_possible_today": 6,   # out of eventual 10 once all layers added
+        "max_possible_today": 8,   # price+momentum(5) + OI(2) + reserved(1); out of eventual 10
         "sl_points": p["sl_points"],
         "target_points": p["target_points"],
         "reasons": reasons,

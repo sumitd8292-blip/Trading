@@ -22,6 +22,7 @@ import json
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from engine import score_setup, log_signal
+from datetime import datetime
 from telegram_notify import send_telegram_message, format_signal_alert
 
 STORE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "daily_store")
@@ -36,6 +37,17 @@ def latest_day(symbol):
     with open(path) as f:
         lines = [json.loads(l) for l in f]
     return lines[-1] if lines else None
+
+
+def latest_oi_bias(symbol):
+    """Returns the most recent OI snapshot for this symbol, if any."""
+    path = os.path.join(STORE_DIR, "options_oi_log.jsonl")
+    if not os.path.exists(path):
+        return None
+    with open(path) as f:
+        entries = [json.loads(l) for l in f if l.strip()]
+    matches = [e for e in entries if e.get("symbol") == symbol]
+    return matches[-1] if matches else None
 
 
 def _alert_key(symbol, date, signal, score):
@@ -64,7 +76,8 @@ def main():
         closes = [c["close"] for c in candles]
         highs = [c["high"] for c in candles]
         lows = [c["low"] for c in candles]
-        result = score_setup(closes, highs, lows)
+        oi_bias = latest_oi_bias(symbol)
+        result = score_setup(closes, highs, lows, oi_bias=oi_bias)
         log_signal(symbol, result, note=f"GitHub Actions run, data date {day['date']}")
 
         if result["signal"] == "NONE":
