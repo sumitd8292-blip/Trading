@@ -133,3 +133,25 @@ Currently populated manually per Claude session (same GrowwMCP-only
 limitation as live data generally) — automating this to run every minute
 without a session open requires the VPS deployment (continuous_runner.py
 already defaults to 1-minute loops, see deploy/deploy.md).
+
+## Learning Loop (added 13 Aug 2026)
+`learning_loop.py` closes the feedback cycle:
+- `record_outcome(symbol, date, outcome, points, exit_reason)` — logs how
+  an alerted signal actually played out (WIN/LOSS/BREAKEVEN/NO_TRADE)
+- `review_performance()` — reads all outcomed trades and breaks down win
+  rate by which layers agreed/disagreed/were neutral, surfacing
+  plain-language suggestions (e.g. "SMC agreement correlates with 70% WR
+  vs 45% overall — consider weighting it higher")
+
+**Design choice**: this does NOT auto-adjust engine.py's scoring weights.
+It surfaces evidence; Saim reviews and decides whether to change
+weights — same "mutual consent" discipline carried over from FlowDesk.
+
+engine.py's `score_setup()` now returns a structured `layer_status` dict
+(agree/disagree/neutral/unavailable per layer) alongside the human-
+readable `reasons` list, and `log_signal()` stores it — this is what
+makes the per-layer performance breakdown possible without fragile text
+parsing.
+
+**Still needs**: Saim providing outcomes after signals play out (nothing
+to review yet — sample size is 0 outcomed trades as of 13 Aug 2026).

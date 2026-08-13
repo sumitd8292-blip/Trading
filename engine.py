@@ -108,6 +108,7 @@ def score_setup(closes, highs, lows, params=None, oi_bias=None, vsa_bias=None, f
     reasons = []
     signal = "NONE"
     score = 0
+    layer_status = {}  # per-layer: "agree" | "disagree" | "neutral" | "unavailable"
 
     long_ok = was_oversold and r[i - 1] < 50 <= r[i] and above_ema
     short_ok = was_overbought and r[i - 1] > 50 >= r[i] and not above_ema
@@ -132,17 +133,21 @@ def score_setup(closes, highs, lows, params=None, oi_bias=None, vsa_bias=None, f
         f_lean = fii_bias.get("lean")
         if (signal == "LONG" and f_lean == "BULLISH") or (signal == "SHORT" and f_lean == "BEARISH"):
             score += 2
+            layer_status["fii_dii"] = "agree"
             reasons.append(f"FII/DII AGREES: {f_lean} (net {fii_bias.get('total_net_crores')} Cr "
                             f"over {fii_bias.get('days_considered')}d) (+2/2)")
         else:
+            layer_status["fii_dii"] = "disagree"
             reasons.append(f"FII/DII DISAGREES: {f_lean} lean vs {signal} signal — treat with caution (0/2)")
     elif fii_bias is not None:
         f_lean = fii_bias.get("lean", "NEUTRAL")
+        layer_status["fii_dii"] = "neutral"
         if signal == "NONE":
             reasons.append(f"FII/DII: {f_lean} noted, but no active price signal to apply it to (0/2)")
         else:
             reasons.append(f"FII/DII: neutral (0/2)")
     else:
+        layer_status["fii_dii"] = "unavailable"
         reasons.append("FII/DII bias: NOT YET INTEGRATED (0/2)")
 
     # OI order-flow layer (wired up 11 Aug 2026)
@@ -150,17 +155,22 @@ def score_setup(closes, highs, lows, params=None, oi_bias=None, vsa_bias=None, f
         lean = oi_bias.get("lean", "NEUTRAL")
         if (signal == "LONG" and lean == "BULLISH") or (signal == "SHORT" and lean == "BEARISH"):
             score += 2
+            layer_status["oi"] = "agree"
             reasons.append(f"OI order-flow AGREES: {lean} lean (PCR {oi_bias.get('pcr')}, "
                             f"resistance {oi_bias.get('resistance_strike')}, "
                             f"support {oi_bias.get('support_strike')}) (+2/2)")
         elif lean == "NEUTRAL":
+            layer_status["oi"] = "neutral"
             reasons.append(f"OI order-flow NEUTRAL (PCR {oi_bias.get('pcr')}) (0/2)")
         else:
+            layer_status["oi"] = "disagree"
             reasons.append(f"OI order-flow DISAGREES: {lean} lean vs {signal} signal — "
                             f"treat with caution (0/2)")
     elif oi_bias is not None:
+        layer_status["oi"] = "neutral"
         reasons.append(f"OI order-flow: no active signal to confirm ({oi_bias.get('lean')} lean noted) (0/2)")
     else:
+        layer_status["oi"] = "unavailable"
         reasons.append("OI order-flow: NOT YET INTEGRATED (0/2)")
 
     # Price-momentum / VSA order-flow-proxy layer (added 12 Aug 2026)
@@ -168,16 +178,20 @@ def score_setup(closes, highs, lows, params=None, oi_bias=None, vsa_bias=None, f
         v_lean = vsa_bias.get("lean")
         if (signal == "LONG" and v_lean == "BULLISH") or (signal == "SHORT" and v_lean == "BEARISH"):
             score += 1
+            layer_status["vsa"] = "agree"
             recent = vsa_bias.get("recent") or {}
             reasons.append(f"Price-momentum (VSA) AGREES: {v_lean} "
                             f"({vsa_bias.get('bullish_signals')} bullish vs "
                             f"{vsa_bias.get('bearish_signals')} bearish bars recently, "
                             f"last: {recent.get('label')}) (+1/1)")
         else:
+            layer_status["vsa"] = "disagree"
             reasons.append(f"Price-momentum (VSA) DISAGREES: {v_lean} lean vs {signal} signal (0/1)")
     elif vsa_bias is not None:
+        layer_status["vsa"] = "neutral"
         reasons.append("Price-momentum (VSA): neutral/no volume data yet (0/1)")
     else:
+        layer_status["vsa"] = "unavailable"
         reasons.append("Price-momentum (VSA): NOT YET INTEGRATED (0/1)")
 
     # Greeks / IV-skew layer (wired up 12 Aug 2026)
@@ -185,18 +199,22 @@ def score_setup(closes, highs, lows, params=None, oi_bias=None, vsa_bias=None, f
         g_lean = greeks_bias.get("lean")
         if (signal == "LONG" and g_lean == "BULLISH") or (signal == "SHORT" and g_lean == "BEARISH"):
             score += 1
+            layer_status["greeks"] = "agree"
             reasons.append(f"Greeks/IV-skew AGREES: {g_lean} (skew {greeks_bias.get('skew_pct')}%, "
                             f"OTM put IV {greeks_bias.get('otm_put_iv')} vs "
                             f"OTM call IV {greeks_bias.get('otm_call_iv')}) (+1/1)")
         else:
+            layer_status["greeks"] = "disagree"
             reasons.append(f"Greeks/IV-skew DISAGREES: {g_lean} lean vs {signal} signal (0/1)")
     elif greeks_bias is not None:
         g_lean2 = greeks_bias.get("lean", "NEUTRAL")
+        layer_status["greeks"] = "neutral"
         if signal == "NONE" and g_lean2 != "NEUTRAL":
             reasons.append(f"Greeks/IV-skew: {g_lean2} noted, but no active price signal to apply it to (0/1)")
         else:
             reasons.append(f"Greeks/IV-skew: neutral (skew {greeks_bias.get('skew_pct')}%) (0/1)")
     else:
+        layer_status["greeks"] = "unavailable"
         reasons.append("Greeks (IV-skew): NOT YET INTEGRATED (0/1)")
 
     # SMC (market structure / BOS-CHoCH / FVG) layer (wired up 12 Aug 2026)
@@ -206,17 +224,21 @@ def score_setup(closes, highs, lows, params=None, oi_bias=None, vsa_bias=None, f
         weight = 2 if structure.get("event") == "CHoCH" else 1  # CHoCH weighted higher than BOS
         if (signal == "LONG" and s_lean == "BULLISH") or (signal == "SHORT" and s_lean == "BEARISH"):
             score += weight
+            layer_status["smc"] = "agree"
             reasons.append(f"SMC AGREES: {s_lean} ({structure.get('event')} — "
                             f"{'; '.join(smc_bias.get('reasons', []))}) (+{weight}/2)")
         else:
+            layer_status["smc"] = "disagree"
             reasons.append(f"SMC DISAGREES: {s_lean} lean vs {signal} signal (0/2)")
     elif smc_bias is not None:
         s_lean2 = smc_bias.get("lean", "NEUTRAL")
+        layer_status["smc"] = "neutral"
         if signal == "NONE" and s_lean2 != "NEUTRAL":
             reasons.append(f"SMC: {s_lean2} noted, but no active price signal to apply it to (0/2)")
         else:
             reasons.append("SMC: neutral, no clear BOS/CHoCH (0/2)")
     else:
+        layer_status["smc"] = "unavailable"
         reasons.append("SMC structure: NOT YET INTEGRATED (0/2)")
 
     return {
@@ -227,6 +249,7 @@ def score_setup(closes, highs, lows, params=None, oi_bias=None, vsa_bias=None, f
         "target_points": p["target_points"],
         "reasons": reasons,
         "rubric_version": RUBRIC_VERSION,
+        "layer_status": layer_status,  # structured agree/disagree/neutral/unavailable per layer, for the learning loop
     }
 
 
@@ -250,6 +273,7 @@ def log_signal(symbol, setup_result, note=""):
         "score": setup_result.get("score"),
         "rubric_version": setup_result.get("rubric_version"),
         "reasons": setup_result.get("reasons"),
+        "layer_status": setup_result.get("layer_status", {}),
         "note": note,
         "outcome": None,   # to be filled in later once trade plays out
     }
