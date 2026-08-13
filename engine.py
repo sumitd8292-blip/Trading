@@ -137,7 +137,11 @@ def score_setup(closes, highs, lows, params=None, oi_bias=None, vsa_bias=None, f
         else:
             reasons.append(f"FII/DII DISAGREES: {f_lean} lean vs {signal} signal — treat with caution (0/2)")
     elif fii_bias is not None:
-        reasons.append("FII/DII: neutral (0/2)")
+        f_lean = fii_bias.get("lean", "NEUTRAL")
+        if signal == "NONE":
+            reasons.append(f"FII/DII: {f_lean} noted, but no active price signal to apply it to (0/2)")
+        else:
+            reasons.append(f"FII/DII: neutral (0/2)")
     else:
         reasons.append("FII/DII bias: NOT YET INTEGRATED (0/2)")
 
@@ -187,7 +191,11 @@ def score_setup(closes, highs, lows, params=None, oi_bias=None, vsa_bias=None, f
         else:
             reasons.append(f"Greeks/IV-skew DISAGREES: {g_lean} lean vs {signal} signal (0/1)")
     elif greeks_bias is not None:
-        reasons.append(f"Greeks/IV-skew: neutral (skew {greeks_bias.get('skew_pct')}%) (0/1)")
+        g_lean2 = greeks_bias.get("lean", "NEUTRAL")
+        if signal == "NONE" and g_lean2 != "NEUTRAL":
+            reasons.append(f"Greeks/IV-skew: {g_lean2} noted, but no active price signal to apply it to (0/1)")
+        else:
+            reasons.append(f"Greeks/IV-skew: neutral (skew {greeks_bias.get('skew_pct')}%) (0/1)")
     else:
         reasons.append("Greeks (IV-skew): NOT YET INTEGRATED (0/1)")
 
@@ -203,7 +211,11 @@ def score_setup(closes, highs, lows, params=None, oi_bias=None, vsa_bias=None, f
         else:
             reasons.append(f"SMC DISAGREES: {s_lean} lean vs {signal} signal (0/2)")
     elif smc_bias is not None:
-        reasons.append("SMC: neutral, no clear BOS/CHoCH (0/2)")
+        s_lean2 = smc_bias.get("lean", "NEUTRAL")
+        if signal == "NONE" and s_lean2 != "NEUTRAL":
+            reasons.append(f"SMC: {s_lean2} noted, but no active price signal to apply it to (0/2)")
+        else:
+            reasons.append("SMC: neutral, no clear BOS/CHoCH (0/2)")
     else:
         reasons.append("SMC structure: NOT YET INTEGRATED (0/2)")
 
