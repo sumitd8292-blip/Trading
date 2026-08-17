@@ -25,6 +25,13 @@ import time
 import sys
 import os
 from datetime import datetime, time as dtime
+from zoneinfo import ZoneInfo
+
+IST = ZoneInfo("Asia/Kolkata")
+
+
+def now_ist():
+    return datetime.now(IST)
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from daily_store import append_intraday_candles
@@ -42,27 +49,27 @@ SYMBOLS = ["NIFTY", "BANKNIFTY"]
 
 
 def is_market_hours(now=None):
-    now = now or datetime.now()
+    now = now or now_ist()
     if now.weekday() >= 5:  # Sat=5, Sun=6
         return False
     return MARKET_OPEN <= now.time() <= MARKET_CLOSE
 
 
 def run_once():
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = now_ist().strftime("%Y-%m-%d")
     alerted = _load_alerted()
 
     for symbol in SYMBOLS:
         try:
             candles = fetch_candles(symbol, f"{today} 09:15:00",
-                                     datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                     now_ist().strftime("%Y-%m-%d %H:%M:%S"),
                                      interval_minutes=1)
         except Exception as e:
-            print(f"[{datetime.now()}] {symbol}: fetch failed — {e}")
+            print(f"[{now_ist()}] {symbol}: fetch failed — {e}")
             continue
 
         if not candles:
-            print(f"[{datetime.now()}] {symbol}: no candles yet")
+            print(f"[{now_ist()}] {symbol}: no candles yet")
             continue
 
         append_intraday_candles(symbol, candles, interval_label="1min")
@@ -77,32 +84,32 @@ def run_once():
         log_signal(symbol, result, note=f"VPS continuous run, {today}")
 
         if result["signal"] == "NONE":
-            print(f"[{datetime.now()}] {symbol}: no signal ({len(candles)} candles)")
+            print(f"[{now_ist()}] {symbol}: no signal ({len(candles)} candles)")
             continue
 
         key = _alert_key(symbol, today, result["signal"], result["score"])
         if key in alerted:
-            print(f"[{datetime.now()}] {symbol}: signal already alerted today, skipping")
+            print(f"[{now_ist()}] {symbol}: signal already alerted today, skipping")
             continue
 
         msg = format_signal_alert(symbol, result) + f"\n\nData date: {today} (live, VPS)"
         send_result = send_telegram_message(msg)
-        print(f"[{datetime.now()}] {symbol}: ALERT SENT — {send_result.get('ok')}")
+        print(f"[{now_ist()}] {symbol}: ALERT SENT — {send_result.get('ok')}")
         if send_result.get("ok"):
             _mark_alerted(key)
             alerted.add(key)
 
 
 def main():
-    print(f"[{datetime.now()}] continuous_runner starting. Loop interval: {LOOP_INTERVAL_SECONDS}s")
+    print(f"[{now_ist()}] continuous_runner starting. Loop interval: {LOOP_INTERVAL_SECONDS}s")
     while True:
         try:
             if is_market_hours():
                 run_once()
             else:
-                print(f"[{datetime.now()}] outside market hours, sleeping")
+                print(f"[{now_ist()}] outside market hours, sleeping")
         except Exception as e:
-            print(f"[{datetime.now()}] UNEXPECTED ERROR: {e}")
+            print(f"[{now_ist()}] UNEXPECTED ERROR: {e}")
         time.sleep(LOOP_INTERVAL_SECONDS)
 
 
