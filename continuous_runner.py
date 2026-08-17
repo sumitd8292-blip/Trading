@@ -43,8 +43,8 @@ from price_momentum import momentum_bias
 from smc import smc_bias as get_smc_bias
 
 LOOP_INTERVAL_SECONDS = 60  # 1-minute granularity
-MARKET_OPEN = dtime(0, 0)
-MARKET_CLOSE = dtime(23, 59)
+MARKET_OPEN = dtime(9, 12)
+MARKET_CLOSE = dtime(15, 40)
 SYMBOLS = ["NIFTY", "BANKNIFTY"]
 
 
