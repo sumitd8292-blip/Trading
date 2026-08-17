@@ -106,10 +106,16 @@ def fetch_candles(symbol, start_time, end_time, exchange="NSE", segment="CASH", 
     raw_candles = data.get("payload", {}).get("candles", [])
     out = []
     for c in raw_candles:
-        ts_epoch, o, h, l, close, vol = c
-        # Groww sometimes returns epoch as a string, sometimes as a number — handle both
-        ts_epoch = float(ts_epoch) if isinstance(ts_epoch, str) else ts_epoch
-        ts = datetime.fromtimestamp(ts_epoch).strftime("%Y-%m-%dT%H:%M:%S")
+        ts_raw, o, h, l, close, vol = c
+        # Groww returns either a numeric epoch or an ISO datetime string depending
+        # on the endpoint/response variant — handle all cases seen so far
+        if isinstance(ts_raw, str):
+            if "T" in ts_raw or "-" in ts_raw:
+                ts = ts_raw[:19]  # already ISO format, just trim to seconds precision
+            else:
+                ts = datetime.fromtimestamp(float(ts_raw)).strftime("%Y-%m-%dT%H:%M:%S")
+        else:
+            ts = datetime.fromtimestamp(ts_raw).strftime("%Y-%m-%dT%H:%M:%S")
         out.append({"timestamp": ts, "open": o, "high": h, "low": l, "close": close, "volume": vol})
     return out
 
