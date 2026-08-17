@@ -132,3 +132,44 @@ if __name__ == "__main__":
             print("Last:", candles[-1])
     except Exception as e:
         print("Test fetch failed:", e)
+
+
+def fetch_option_chain(underlying, expiry_date, exchange="NSE"):
+    """
+    Fetches the FULL option chain (all strikes, both CE/PE, with Greeks
+    already included) in ONE call — much better than the old manual-CSV
+    workflow. Endpoint added 17 Aug 2026 in response to Saim's request
+    for continuous/live options data (relevant for expiry-day gamma
+    analysis).
+
+    underlying: e.g. "NIFTY", "BANKNIFTY"
+    expiry_date: "YYYY-MM-DD"
+
+    Returns the raw parsed JSON payload (structure not fully confirmed
+    from docs alone — first live call should be inspected to confirm
+    field names; this function does NOT reshape the response, callers
+    should handle whatever structure comes back and we'll adapt).
+    """
+    if not GROWW_API_KEY:
+        raise RuntimeError("GROWW_API_KEY not set (expected in environment / GitHub secret).")
+
+    url = f"{GROWW_API_BASE}/option-chain/exchange/{exchange}/underlying/{underlying}?expiry_date={expiry_date}"
+
+    req = urllib.request.Request(url, headers={
+        "Accept": "application/json",
+        "Authorization": f"Bearer {GROWW_API_KEY}",
+        "X-API-VERSION": "1.0",
+    })
+
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            data = json.loads(resp.read().decode())
+    except urllib.error.HTTPError as e:
+        raise RuntimeError(f"Groww option-chain HTTP error {e.code}: {e.read().decode()[:800]}")
+    except Exception as e:
+        raise RuntimeError(f"Groww option-chain request failed: {e}")
+
+    if data.get("status") != "SUCCESS":
+        raise RuntimeError(f"Groww option-chain returned non-success: {data}")
+
+    return data.get("payload")
