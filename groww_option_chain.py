@@ -43,8 +43,12 @@ def parse_option_chain(payload):
         payload = json.loads(payload)
     if not isinstance(payload, dict):
         return []
+    # Confirmed live structure (17 Aug 2026): top-level payload is
+    # {"underlying_ltp": ..., "strikes": {"<strike>": {"CE":..., "PE":...}}}
+    # — strikes are nested under "strikes", not at the top level.
+    strikes_dict = payload.get("strikes", payload)
     rows = []
-    for strike_str, sides in payload.items():
+    for strike_str, sides in strikes_dict.items():
         try:
             strike = float(strike_str)
         except ValueError:
@@ -139,14 +143,12 @@ if __name__ == "__main__":
 
     underlying = sys.argv[1] if len(sys.argv) > 1 else "NIFTY"
     expiry = sys.argv[2] if len(sys.argv) > 2 else "2026-08-18"
-    spot = float(sys.argv[3]) if len(sys.argv) > 3 else 24300
 
     payload = fetch_option_chain(underlying, expiry)
-    print(f"Payload type: {type(payload)}")
-    if isinstance(payload, dict):
-        print(f"Payload top-level keys ({len(payload)}): {list(payload.keys())[:15]}")
-    elif isinstance(payload, str):
-        print(f"Payload is a STRING, first 500 chars: {payload[:500]}")
+    spot = payload.get("underlying_ltp") if isinstance(payload, dict) else None
+    if len(sys.argv) > 3:
+        spot = float(sys.argv[3])  # manual override still supported
+    print(f"Spot (underlying_ltp): {spot}")
     rows = parse_option_chain(payload)
     print(f"Parsed {len(rows)} strikes")
 
