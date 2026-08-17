@@ -36,6 +36,13 @@ def parse_option_chain(payload):
     Returns a list of {strike, call: {...}, put: {...}} dicts, one per
     strike, with call/put each holding delta/gamma/theta/vega/iv/ltp/oi/volume.
     """
+    # Defensive: some Groww endpoints return payload values as JSON-encoded
+    # strings rather than nested objects (seen in other endpoints docs) —
+    # handle that case too.
+    if isinstance(payload, str):
+        payload = json.loads(payload)
+    if not isinstance(payload, dict):
+        return []
     rows = []
     for strike_str, sides in payload.items():
         try:
@@ -135,6 +142,11 @@ if __name__ == "__main__":
     spot = float(sys.argv[3]) if len(sys.argv) > 3 else 24300
 
     payload = fetch_option_chain(underlying, expiry)
+    print(f"Payload type: {type(payload)}")
+    if isinstance(payload, dict):
+        print(f"Payload top-level keys ({len(payload)}): {list(payload.keys())[:15]}")
+    elif isinstance(payload, str):
+        print(f"Payload is a STRING, first 500 chars: {payload[:500]}")
     rows = parse_option_chain(payload)
     print(f"Parsed {len(rows)} strikes")
 
