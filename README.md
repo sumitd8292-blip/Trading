@@ -192,3 +192,26 @@ payload is `{"<strike>": {"CE": {...}, "PE": {...}}}`, each side having
 Not yet wired into the continuous_runner's scoring loop — next step is
 polling this periodically (e.g. every 5 min) and feeding gamma/OI/IV-skew
 into engine.py automatically instead of the old manual snapshot flow.
+
+## Self-Generated Paper Trading (added 17 Aug 2026)
+Direct response to Saim's feedback: waiting for manual outcome reporting
+is too slow. `paper_trader.py` makes the agent generate its OWN training
+data continuously:
+- Every time engine.py produces a real signal (regardless of whether a
+  Telegram alert was sent or whether Saim actually takes the trade),
+  `open_paper_trade()` records a virtual position with entry/SL/target
+- Every subsequent loop tick, `check_open_trades()` checks the latest
+  candle against open paper trades — if SL or target is hit, closes it
+  and AUTOMATICALLY calls `learning_loop.record_outcome()` — no manual
+  input needed
+- At EOD, any still-open paper trade force-closes at the closing price
+
+This means the learning loop now accumulates real WIN/LOSS/points data
+every single trading day automatically, even on days Saim doesn't
+personally trade — much faster than the original manual-reporting
+design. Paper trades are explicitly separate from Saim's actual executed
+positions (tracked in `positions.py`) — they're the agent's own
+self-generated backtesting-in-real-time.
+
+Wired into continuous_runner.py's main loop. Tested locally end-to-end
+(open → target hit → WIN recorded → learning_loop updated) — works.

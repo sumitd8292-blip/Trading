@@ -39,6 +39,7 @@ from engine import score_setup, log_signal
 from telegram_notify import send_telegram_message, format_signal_alert
 from groww_api import fetch_candles
 from run_agent_check import latest_oi_bias, _alert_key, _load_alerted, _mark_alerted
+from paper_trader import open_paper_trade, check_open_trades
 from price_momentum import momentum_bias
 from smc import smc_bias as get_smc_bias
 
@@ -82,6 +83,20 @@ def run_once():
         s_bias = get_smc_bias(candles)
         result = score_setup(closes, highs, lows, oi_bias=oi_bias, vsa_bias=vsa_bias, smc_bias=s_bias, candles_for_trend=candles)
         log_signal(symbol, result, note=f"VPS continuous run, {today}")
+
+        # Self-generated paper trading (added 17 Aug 2026, Saim's request for
+        # faster learning): check/close any open paper trade against latest
+        # candle every tick, and open a NEW one whenever a fresh signal fires
+        # — independent of whether a Telegram alert was sent (dedup only
+        # controls Telegram noise, not the learning data).
+        closed = check_open_trades(symbol, candles, is_eod=(now_ist().time() >= MARKET_CLOSE))
+        for c in closed:
+            print(f"[{now_ist()}] {symbol}: PAPER TRADE CLOSED — {c['outcome']} {c['outcome_points']:+.1f} pts ({c['exit_reason']})")
+
+        if result["signal"] != "NONE":
+            open_paper_trade(symbol, today, result["signal"], closes[-1],
+                              result.get("sl_points", 15), result.get("target_points", 25),
+                              result.get("layer_status", {}), result["score"], result["reasons"])
 
         if result["signal"] == "NONE":
             print(f"[{now_ist()}] {symbol}: no signal ({len(candles)} candles)")
