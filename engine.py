@@ -81,7 +81,7 @@ DEFAULT_PARAMS = {
 }
 
 
-def score_setup(closes, highs, lows, params=None, oi_bias=None, vsa_bias=None, fii_bias=None, greeks_bias=None, smc_bias=None):
+def score_setup(closes, highs, lows, params=None, oi_bias=None, vsa_bias=None, fii_bias=None, greeks_bias=None, smc_bias=None, candles_for_trend=None):
     """
     Returns a dict: {signal: LONG|SHORT|NONE, score: 0-10, reasons: [...]}
     oi_bias: optional dict from oi_orderflow.compute_oi_bias() — if given,
@@ -131,7 +131,23 @@ def score_setup(closes, highs, lows, params=None, oi_bias=None, vsa_bias=None, f
         score += 2
         reasons.append("Price below EMA20 (trend filter aligned)")
     else:
-        reasons.append("No confirmed price/momentum setup")
+        # Fallback: try trend-continuation detector (catches an in-progress
+        # directional move that RSI-reversal logic structurally cannot see,
+        # per Saim's 17 Aug feedback — a sustained trend never triggers
+        # oversold/overbought recovery because it never reverses)
+        trend_result = None
+        if candles_for_trend:
+            from trend_continuation import detect_trend_continuation
+            trend_result = detect_trend_continuation(candles_for_trend)
+
+        if trend_result:
+            signal = trend_result["signal"]
+            score += 4
+            reasons.append(f"TREND-CONTINUATION: {trend_result['bars_aligned']}/5 bars aligned "
+                            f"{signal}, net move {trend_result['move_pct']}% — active directional move, "
+                            f"not waiting for reversal (+4)")
+        else:
+            reasons.append("No confirmed price/momentum setup (neither reversal nor trend-continuation)")
 
     # FII/DII bias layer (wired up 12 Aug 2026)
     if signal != "NONE" and fii_bias is not None and fii_bias.get("lean") != "NEUTRAL":

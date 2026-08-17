@@ -155,3 +155,19 @@ parsing.
 
 **Still needs**: Saim providing outcomes after signals play out (nothing
 to review yet — sample size is 0 outcomed trades as of 13 Aug 2026).
+
+## Trend-Continuation Detector (added 17 Aug 2026)
+Direct response to Saim's live feedback: the RSI-reversal engine only
+catches the SNAP-BACK after a trend exhausts (a mean-reversion detector)
+— it structurally cannot fire during an ongoing sustained directional
+move (e.g. market opens and sells off steadily, or rallies steadily for
+hours). `trend_continuation.py`'s `detect_trend_continuation()` reads
+recent candle-to-candle direction directly — if 4+ of the last 5 candles
+move the same way with a meaningful net move, it fires IMMEDIATELY,
+without waiting for any RSI extreme or reversal.
+
+Wired into engine.py as a FALLBACK signal source: if the RSI-reversal
+logic doesn't fire, trend-continuation is checked next (+4 pts). This
+means the engine can now catch both reversal setups (range-bound/choppy
+markets, smaller targets) and trend-continuation setups (sustained
+directional runs, bigger targets) — Saim's exact distinction.

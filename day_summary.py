@@ -56,7 +56,7 @@ def analyze_symbol(symbol):
     fii = get_latest_manual_fii_bias()
 
     result = score_setup(closes, highs, lows, oi_bias=oi, vsa_bias=vsa, fii_bias=fii,
-                          greeks_bias=greeks, smc_bias=smc)
+                          greeks_bias=greeks, smc_bias=smc, candles_for_trend=candles)
 
     lines = [f"<b>{symbol} — {today}</b>"]
     lines.append(f"Open {day_open:.1f} | High {day_high:.1f} | Low {day_low:.1f} | Close {day_close:.1f}")

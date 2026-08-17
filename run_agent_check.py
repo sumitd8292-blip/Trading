@@ -110,7 +110,7 @@ def main():
         vsa_bias = momentum_bias(candles)
         g_bias = latest_greeks_bias(symbol)
         s_bias = smc_bias(candles)
-        result = score_setup(closes, highs, lows, oi_bias=oi_bias, vsa_bias=vsa_bias, fii_bias=fii_bias, greeks_bias=g_bias, smc_bias=s_bias)
+        result = score_setup(closes, highs, lows, oi_bias=oi_bias, vsa_bias=vsa_bias, fii_bias=fii_bias, greeks_bias=g_bias, smc_bias=s_bias, candles_for_trend=candles)
         log_signal(symbol, result, note=f"GitHub Actions run, data date {day['date']}")
 
         if result["signal"] == "NONE":

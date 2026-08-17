@@ -80,7 +80,7 @@ def run_once():
         oi_bias = latest_oi_bias(symbol)
         vsa_bias = momentum_bias(candles)
         s_bias = get_smc_bias(candles)
-        result = score_setup(closes, highs, lows, oi_bias=oi_bias, vsa_bias=vsa_bias, smc_bias=s_bias)
+        result = score_setup(closes, highs, lows, oi_bias=oi_bias, vsa_bias=vsa_bias, smc_bias=s_bias, candles_for_trend=candles)
         log_signal(symbol, result, note=f"VPS continuous run, {today}")
 
         if result["signal"] == "NONE":
