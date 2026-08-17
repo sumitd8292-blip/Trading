@@ -110,8 +110,13 @@ def score_setup(closes, highs, lows, params=None, oi_bias=None, vsa_bias=None, f
     score = 0
     layer_status = {}  # per-layer: "agree" | "disagree" | "neutral" | "unavailable"
 
-    long_ok = was_oversold and r[i - 1] < 50 <= r[i] and above_ema
-    short_ok = was_overbought and r[i - 1] > 50 >= r[i] and not above_ema
+    # Broadened (12 Aug -> fixed 17 Aug): previously required RSI to cross
+    # 50 on the EXACT current candle, which misses the entire trend once RSI
+    # has already crossed and moved further (e.g. RSI ran from 20 to 70-80).
+    # Now: RSI recovered from oversold/overbought recently AND is currently
+    # on the correct side of 50, decoupled from exact-candle crossover timing.
+    long_ok = was_oversold and r[i] > 50 and above_ema
+    short_ok = was_overbought and r[i] < 50 and not above_ema
 
     if long_ok:
         signal = "LONG"
