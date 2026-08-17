@@ -59,10 +59,16 @@ _INTERVAL_MAP = {
 }
 
 
-def fetch_candles(symbol, start_time, end_time, exchange="NSE", segment="CASH", interval_minutes=5):
+def fetch_candles(symbol, start_time, end_time, exchange="NSE", segment="CASH", interval_minutes=5, expiry=None):
     """
     symbol: plain trading symbol, e.g. "NIFTY", "RELIANCE" (gets combined
-            into groww_symbol as "EXCHANGE-SYMBOL").
+            into groww_symbol as "EXCHANGE-SYMBOL" for cash/index).
+    expiry: for FUTURES (segment="FNO"), pass expiry as "DDMmmYY" (e.g.
+            "28Aug25") to fetch futures candles instead of cash/index —
+            groww_symbol becomes "EXCHANGE-SYMBOL-EXPIRY-FUT". Used for
+            post-market-close futures momentum (futures/options trade
+            15:15-15:30ish after the cash index closes, per Saim's 17
+            Aug request to track that continuation as a next-day gap signal).
     start_time / end_time: 'YYYY-MM-DD HH:MM:SS' strings (IST, market hours).
     interval_minutes: one of 1, 5, 15, 30, 60.
     Returns a list of {timestamp, open, high, low, close, volume} dicts,
@@ -75,7 +81,10 @@ def fetch_candles(symbol, start_time, end_time, exchange="NSE", segment="CASH", 
     if not candle_interval:
         raise ValueError(f"Unsupported interval_minutes: {interval_minutes}")
 
-    groww_symbol = f"{exchange}-{symbol}"
+    if expiry:
+        groww_symbol = f"{exchange}-{symbol}-{expiry}-FUT"
+    else:
+        groww_symbol = f"{exchange}-{symbol}"
     params = urllib.parse.urlencode({
         "exchange": exchange,
         "segment": segment,
