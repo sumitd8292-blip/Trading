@@ -106,7 +106,9 @@ def fetch_candles(symbol, start_time, end_time, exchange="NSE", segment="CASH", 
     raw_candles = data.get("payload", {}).get("candles", [])
     out = []
     for c in raw_candles:
-        ts_raw, o, h, l, close, vol = c
+        # Handle variable-length candle tuples (some responses omit volume)
+        ts_raw, o, h, l, close = c[0], c[1], c[2], c[3], c[4]
+        vol = c[5] if len(c) > 5 else None
         # Groww returns either a numeric epoch or an ISO datetime string depending
         # on the endpoint/response variant — handle all cases seen so far
         if isinstance(ts_raw, str):
