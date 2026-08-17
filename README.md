@@ -171,3 +171,24 @@ logic doesn't fire, trend-continuation is checked next (+4 pts). This
 means the engine can now catch both reversal setups (range-bound/choppy
 markets, smaller targets) and trend-continuation setups (sustained
 directional runs, bigger targets) — Saim's exact distinction.
+
+## Live Option Chain + Gamma Exposure (added 17 Aug 2026)
+`groww_option_chain.py` replaces the old manual-CSV-upload OI/Greeks
+workflow with ONE live API call (`groww_api.fetch_option_chain()` →
+`/v1/option-chain/exchange/{exchange}/underlying/{underlying}`) that
+returns the full strike chain with Greeks already included.
+
+New capability: **Gamma Exposure (GEX)** — `compute_gamma_exposure()`
+sums gamma × OI near the money to identify where dealer/market-maker
+hedging concentrates. Positive net GEX suggests pinning (dampened
+moves), negative suggests acceleration (amplified moves) — relevant for
+expiry-day "gamma blast" analysis Saim asked about (18 Aug is NIFTY
+expiry).
+
+Response structure confirmed live via `inspect_option_chain.py`:
+payload is `{"<strike>": {"CE": {...}, "PE": {...}}}`, each side having
+`greeks` (delta/gamma/theta/vega/rho/iv), `ltp`, `open_interest`, `volume`.
+
+Not yet wired into the continuous_runner's scoring loop — next step is
+polling this periodically (e.g. every 5 min) and feeding gamma/OI/IV-skew
+into engine.py automatically instead of the old manual snapshot flow.
