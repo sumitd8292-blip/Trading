@@ -107,6 +107,8 @@ def fetch_candles(symbol, start_time, end_time, exchange="NSE", segment="CASH", 
     out = []
     for c in raw_candles:
         ts_epoch, o, h, l, close, vol = c
+        # Groww sometimes returns epoch as a string, sometimes as a number — handle both
+        ts_epoch = float(ts_epoch) if isinstance(ts_epoch, str) else ts_epoch
         ts = datetime.fromtimestamp(ts_epoch).strftime("%Y-%m-%dT%H:%M:%S")
         out.append({"timestamp": ts, "open": o, "high": h, "low": l, "close": close, "volume": vol})
     return out
