@@ -1,9 +1,14 @@
 name: Order-Flow Agent Run
 
 on:
-  schedule:
-    # Every 5 minutes during NSE market hours (9:15-15:30 IST = 3:45-10:00 UTC), Mon-Fri
-    - cron: '*/5 3-10 * * 1-5'
+  # DISABLED (18 Aug 2026): superseded by continuous_runner.py running
+  # 24x7 on the VPS (static IP, no Groww 403 blocking issues). This
+  # workflow's random GitHub Actions IPs get 401/403'd by Groww and were
+  # spamming duplicate failure messages to the same Telegram bot the VPS
+  # uses. Keeping the file (for workflow_dispatch / manual testing only)
+  # but the schedule trigger is commented out.
+  # schedule:
+  #   - cron: '*/5 3-10 * * 1-5'
   workflow_dispatch: {}   # allows manual "Run workflow" trigger for testing
 
 permissions:
