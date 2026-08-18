@@ -48,23 +48,27 @@ def _write_all(entries):
             f.write(json.dumps(e) + "\n")
 
 
-def open_paper_trade(symbol, date_str, signal, entry_price, sl_points, target_points, layer_status, score, reasons):
+def open_paper_trade(symbol, date_str, signal, entry_price, sl_points, target_points, layer_status, score, reasons,
+                      trail_trigger_points=15, trail_distance_points=15):
     """
-    Records a new self-generated paper trade. One open trade per
-    (symbol, date) at a time — if one's already open for today, skip
-    (avoids overlapping paper positions from repeated signal checks).
+    Records a new self-generated paper trade using a TRAILING STOP exit
+    (changed 17 Aug 2026 — backtest on 15 days of real NIFTY data showed
+    trailing beats fixed SL/target: -50 pts vs +17.8 pts net over 25
+    trades). No fixed target — SL starts trailing once price moves
+    `trail_trigger_points` in favor, staying `trail_distance_points`
+    behind the best price reached. Rides the trend until trailing SL
+    is hit or EOD forces a close.
+
+    One open trade per (symbol, date) at a time — if one's already open
+    for today, skip (avoids overlapping paper positions from repeated
+    signal checks).
     """
     entries = _read_all()
     already_open = any(e["symbol"] == symbol and e["date"] == date_str and e["status"] == "OPEN" for e in entries)
     if already_open:
         return None
 
-    if signal == "LONG":
-        sl_price = entry_price - sl_points
-        target_price = entry_price + target_points
-    else:  # SHORT
-        sl_price = entry_price + sl_points
-        target_price = entry_price - target_points
+    initial_sl_price = entry_price - sl_points if signal == "LONG" else entry_price + sl_points
 
     trade = {
         "symbol": symbol,
@@ -72,10 +76,11 @@ def open_paper_trade(symbol, date_str, signal, entry_price, sl_points, target_po
         "signal": signal,
         "entry_price": entry_price,
         "entry_time": datetime.now().isoformat(),
-        "sl_price": round(sl_price, 2),
-        "target_price": round(target_price, 2),
+        "current_sl_price": round(initial_sl_price, 2),
+        "best_price": entry_price,
         "sl_points": sl_points,
-        "target_points": target_points,
+        "trail_trigger_points": trail_trigger_points,
+        "trail_distance_points": trail_distance_points,
         "layer_status": layer_status,
         "score": score,
         "reasons": reasons,
@@ -93,9 +98,10 @@ def open_paper_trade(symbol, date_str, signal, entry_price, sl_points, target_po
 def check_open_trades(symbol, latest_candles, is_eod=False):
     """
     Checks all OPEN paper trades for `symbol` against the latest candle
-    data (list of {high, low, close, timestamp}). Closes any that hit
-    SL/target, or force-closes at EOD if is_eod=True. Automatically
-    records outcomes via learning_loop.record_outcome().
+    data (list of {high, low, close, timestamp}). Updates the trailing
+    SL as price moves favorably, closes any trade whose trailing SL is
+    hit, or force-closes at EOD if is_eod=True. Automatically records
+    outcomes via learning_loop.record_outcome().
 
     Returns a list of trades that were closed this call (for logging/alerting).
     """
@@ -111,28 +117,32 @@ def check_open_trades(symbol, latest_candles, is_eod=False):
         if trade["symbol"] != symbol or trade["status"] != "OPEN":
             continue
 
-        hit_sl = hit_target = False
-        if trade["signal"] == "LONG":
-            hit_target = latest["high"] >= trade["target_price"]
-            hit_sl = latest["low"] <= trade["sl_price"]
-        else:
-            hit_target = latest["low"] <= trade["target_price"]
-            hit_sl = latest["high"] >= trade["sl_price"]
+        h, l = latest["high"], latest["low"]
+        direction = trade["signal"]
+        entry = trade["entry_price"]
 
-        exit_reason = None
-        exit_price = None
-        if hit_target and hit_sl:
-            # Ambiguous same-candle hit — assume SL first (conservative)
-            exit_reason, exit_price = "hit SL (same-candle ambiguity, conservative)", trade["sl_price"]
-        elif hit_target:
-            exit_reason, exit_price = "hit target", trade["target_price"]
-        elif hit_sl:
-            exit_reason, exit_price = "hit SL", trade["sl_price"]
+        # Update trailing SL based on best price reached so far
+        if direction == "LONG":
+            trade["best_price"] = max(trade["best_price"], h)
+            if trade["best_price"] - entry >= trade["trail_trigger_points"]:
+                new_sl = trade["best_price"] - trade["trail_distance_points"]
+                trade["current_sl_price"] = max(trade["current_sl_price"], new_sl)
+            hit_sl = l <= trade["current_sl_price"]
+        else:
+            trade["best_price"] = min(trade["best_price"], l)
+            if entry - trade["best_price"] >= trade["trail_trigger_points"]:
+                new_sl = trade["best_price"] + trade["trail_distance_points"]
+                trade["current_sl_price"] = min(trade["current_sl_price"], new_sl)
+            hit_sl = h >= trade["current_sl_price"]
+
+        exit_reason = exit_price = None
+        if hit_sl:
+            exit_reason, exit_price = "trailing SL hit", trade["current_sl_price"]
         elif is_eod:
             exit_reason, exit_price = "EOD close", latest["close"]
 
         if exit_reason:
-            pts = (exit_price - trade["entry_price"]) if trade["signal"] == "LONG" else (trade["entry_price"] - exit_price)
+            pts = (exit_price - entry) if direction == "LONG" else (entry - exit_price)
             outcome = "WIN" if pts > 0 else ("LOSS" if pts < 0 else "BREAKEVEN")
 
             trade["status"] = "CLOSED"
@@ -143,7 +153,7 @@ def check_open_trades(symbol, latest_candles, is_eod=False):
             trade["exit_reason"] = exit_reason
 
             record_outcome(symbol, trade["date"], outcome, points=round(pts, 2), exit_reason=exit_reason,
-                            notes="auto-recorded by paper_trader.py (self-generated, not necessarily a real trade Saim took)")
+                            notes="auto-recorded by paper_trader.py (self-generated, not necessarily a real trade Saim took; trailing-stop exit)")
             closed_this_call.append(trade)
 
     _write_all(entries)
