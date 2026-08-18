@@ -215,3 +215,12 @@ self-generated backtesting-in-real-time.
 
 Wired into continuous_runner.py's main loop. Tested locally end-to-end
 (open → target hit → WIN recorded → learning_loop updated) — works.
+
+## Live Option Chain Wired Into Continuous Loop (18 Aug 2026)
+continuous_runner.py now fetches LIVE option chain (OI/PCR + Gamma
+Exposure) every ~5 loops (5 min), replacing the stale manual-CSV-upload
+snapshot that was otherwise days old. Weekly expiry auto-detected via
+get_next_tuesday_expiry() (both NIFTY and BANKNIFTY currently expire
+Tuesdays — recheck this if NSE changes the expiry day again). Live OI
+bias now feeds engine.py's scoring in place of the old manual snapshot
+whenever available.

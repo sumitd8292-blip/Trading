@@ -37,16 +37,70 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from daily_store import append_intraday_candles
 from engine import score_setup, log_signal
 from telegram_notify import send_telegram_message, format_signal_alert
-from groww_api import fetch_candles
+from groww_api import fetch_candles, fetch_option_chain
 from run_agent_check import latest_oi_bias, _alert_key, _load_alerted, _mark_alerted
 from paper_trader import open_paper_trade, check_open_trades
 from price_momentum import momentum_bias
 from smc import smc_bias as get_smc_bias
+from groww_option_chain import parse_option_chain, compute_gamma_exposure, compute_oi_and_iv_bias
 
 LOOP_INTERVAL_SECONDS = 60  # 1-minute granularity
 MARKET_OPEN = dtime(9, 12)
 MARKET_CLOSE = dtime(15, 40)
 SYMBOLS = ["NIFTY", "BANKNIFTY"]
+OPTION_CHAIN_REFRESH_LOOPS = 5  # fetch live option chain every 5 loops (~5 min), not every 1 min — it's a heavier call
+_option_chain_loop_counter = 0
+_latest_live_oi_bias = {}   # symbol -> latest live OI/PCR dict (replaces stale manual CSV snapshot)
+_latest_live_gex = {}       # symbol -> latest live Gamma Exposure dict
+
+
+def get_next_tuesday_expiry(from_date=None):
+    """
+    Both NIFTY and BANKNIFTY weekly options currently expire on Tuesdays
+    (observed: 11-Aug, 18-Aug, 25-Aug 2026 are all Tuesdays). Returns
+    today's date if today IS a Tuesday (expiry day itself), else the
+    next upcoming Tuesday, formatted as YYYY-MM-DD for the option-chain API.
+    NOTE: NSE could change the weekly expiry day again — if option-chain
+    fetches start failing with "no data", this is the first thing to check.
+    """
+    from datetime import timedelta
+    d = from_date or now_ist().date()
+    days_ahead = (1 - d.weekday()) % 7  # Monday=0 ... Tuesday=1
+    target = d + timedelta(days=days_ahead)
+    return target.strftime("%Y-%m-%d")
+
+
+def refresh_live_option_chain():
+    """
+    Fetches live option chain for NIFTY + BANKNIFTY, computes OI/PCR and
+    Gamma Exposure, and updates the module-level caches used by run_once().
+    Called every OPTION_CHAIN_REFRESH_LOOPS iterations (not every loop —
+    it's a heavier call than a plain candle fetch).
+    """
+    expiry = get_next_tuesday_expiry()
+    for symbol in SYMBOLS:
+        try:
+            payload = fetch_option_chain(symbol, expiry)
+            spot = payload.get("underlying_ltp") if isinstance(payload, dict) else None
+            rows = parse_option_chain(payload)
+            if not rows or not spot:
+                print(f"[{now_ist()}] {symbol}: option chain empty/no spot (expiry={expiry})")
+                continue
+            oi_iv = compute_oi_and_iv_bias(rows, spot)
+            # Derive a simple lean from PCR for compatibility with engine.py's oi_bias shape
+            pcr = oi_iv["pcr"]
+            lean = "BEARISH" if pcr > 1.1 else ("BULLISH" if pcr < 0.9 else "NEUTRAL")
+            _latest_live_oi_bias[symbol] = {
+                "lean": lean, "pcr": pcr,
+                "resistance_strike": oi_iv["resistance_strike"],
+                "support_strike": oi_iv["support_strike"],
+            }
+            gex = compute_gamma_exposure(rows, spot)
+            _latest_live_gex[symbol] = gex
+            print(f"[{now_ist()}] {symbol}: live option chain refreshed — OI lean={lean} PCR={pcr}, "
+                  f"GEX regime={gex.get('regime') if gex else 'n/a'}")
+        except Exception as e:
+            print(f"[{now_ist()}] {symbol}: option chain fetch failed — {e}")
 
 
 def is_market_hours(now=None):
@@ -57,8 +111,14 @@ def is_market_hours(now=None):
 
 
 def run_once():
+    global _option_chain_loop_counter
     today = now_ist().strftime("%Y-%m-%d")
     alerted = _load_alerted()
+
+    # Refresh live option chain (OI/PCR + Gamma Exposure) every N loops
+    if _option_chain_loop_counter % OPTION_CHAIN_REFRESH_LOOPS == 0:
+        refresh_live_option_chain()
+    _option_chain_loop_counter += 1
 
     for symbol in SYMBOLS:
         try:
@@ -78,7 +138,10 @@ def run_once():
         closes = [c["close"] for c in candles]
         highs = [c["high"] for c in candles]
         lows = [c["low"] for c in candles]
-        oi_bias = latest_oi_bias(symbol)
+        # Prefer live option-chain OI (refreshed every ~5 min) over the old
+        # manual CSV snapshot — falls back to the manual snapshot only if
+        # live fetch hasn't succeeded yet this run
+        oi_bias = _latest_live_oi_bias.get(symbol) or latest_oi_bias(symbol)
         vsa_bias = momentum_bias(candles)
         s_bias = get_smc_bias(candles)
         result = score_setup(closes, highs, lows, oi_bias=oi_bias, vsa_bias=vsa_bias, smc_bias=s_bias, candles_for_trend=candles)
