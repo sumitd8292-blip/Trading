@@ -340,3 +340,22 @@ snapshot at the start of the pre-close window (~15:15) and runs the
 analysis right after market close, once per expiry day. Tested with
 simulated accelerating-price data (correctly detected 9.95x
 acceleration ratio).
+
+## Two Critical Fixes to Expiry-Close Tracker (18 Aug 2026, same day)
+1. **Timing bug fixed**: MARKET_CLOSE was hardcoded to 15:30 in
+   expiry_close_tracker.py, but options/futures actually trade until
+   15:40 (cash index closes ~15:15/15:30, options/futures continue) —
+   the real gamma-blast window was being cut short, missing data.
+   Fixed to 15:40, matching continuous_runner.py's own constant.
+2. **Weekly-only vs combined-expiry tagging** (critical per Saim's
+   warning): 25 Aug 2026 is the first date where NIFTY's weekly expiry
+   AND BANKNIFTY's monthly expiry land on the SAME day — a combined
+   expiry day's gamma-blast intensity is structurally different
+   (expected bigger) than a normal weekly-only day. Pooling them
+   together would corrupt the learned baseline and make future
+   weekly-only days look "wrong" against an inflated combined-day
+   average. analyze_close_window() now takes an expiry_type param
+   ("weekly_only" vs "weekly_and_monthly_combined"), auto-detected in
+   continuous_runner.py by checking whether more than one tracked
+   symbol expires on the same date. review_acceleration_stats() reports
+   these as separate breakdowns, never pooled.

@@ -281,10 +281,21 @@ def run_once():
             chain_data = _latest_option_rows.get(symbol)
             start_rows = _close_window_start_snapshot.get(symbol)
             end_rows = chain_data[0] if chain_data else None
-            event = analyze_close_window(symbol, today, candles, option_rows_at_start=start_rows, option_rows_at_close=end_rows)
+
+            # Determine expiry_type: does EVERY symbol we track expire today,
+            # or just this one? (25 Aug 2026 is the first day NIFTY-weekly
+            # and BANKNIFTY-monthly coincide — per Saim's 18 Aug warning,
+            # this MUST be tagged distinctly so it doesn't corrupt the
+            # weekly-only baseline)
+            todays_expiries = {s: _EXPIRY_CALCULATORS.get(s, get_next_tuesday_expiry)() for s in SYMBOLS}
+            symbols_expiring_today = [s for s, exp in todays_expiries.items() if exp == today]
+            expiry_type = "weekly_and_monthly_combined" if len(symbols_expiring_today) > 1 else "weekly_only"
+
+            event = analyze_close_window(symbol, today, candles, option_rows_at_start=start_rows,
+                                          option_rows_at_close=end_rows, expiry_type=expiry_type)
             if event:
-                print(f"[{now_ist()}] {symbol}: EXPIRY-CLOSE analysis — acceleration_ratio={event['acceleration_ratio']}, "
-                      f"biggest_strike_move={event['biggest_strike_move']}")
+                print(f"[{now_ist()}] {symbol}: EXPIRY-CLOSE analysis ({expiry_type}) — "
+                      f"acceleration_ratio={event['acceleration_ratio']}, biggest_strike_move={event['biggest_strike_move']}")
             _close_window_analyzed_today[symbol] = today
 
         if result["signal"] != "NONE":

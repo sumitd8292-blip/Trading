@@ -28,8 +28,11 @@ from datetime import datetime, time as dtime
 BASE = os.path.dirname(os.path.abspath(__file__))
 EXPIRY_CLOSE_LOG_PATH = os.path.join(BASE, "memory", "expiry_close_events.jsonl")
 
-PRE_CLOSE_WINDOW_START = dtime(15, 15)  # last ~15 min before 15:30 close
-MARKET_CLOSE = dtime(15, 30)
+PRE_CLOSE_WINDOW_START = dtime(15, 15)  # last ~25 min before options/futures actually stop
+MARKET_CLOSE = dtime(15, 40)  # FIXED 18 Aug: options/futures trade until 15:40, not 15:30
+                               # (cash index closes ~15:15/15:30, but options/futures continue —
+                               # the actual gamma-blast window extends through 15:40, so this
+                               # must match continuous_runner.py's own MARKET_CLOSE, not stop early)
 
 
 def _read_all():
@@ -45,15 +48,26 @@ def _write_all(entries):
             f.write(json.dumps(e) + "\n")
 
 
-def analyze_close_window(symbol, date_str, day_candles, option_rows_at_start=None, option_rows_at_close=None):
+def analyze_close_window(symbol, date_str, day_candles, option_rows_at_start=None, option_rows_at_close=None,
+                          expiry_type="weekly_only"):
     """
     Call this once, right after market close on an expiry day, with the
     FULL day's 1-min candles (day_candles) and, if available, option
-    chain snapshots taken near the start (15:15) and end (15:29) of the
-    pre-close window.
+    chain snapshots taken near the start (15:15) and end (~15:40, when
+    options/futures actually stop — NOT 15:30 when the cash index
+    closes) of the pre-close window.
+
+    expiry_type: "weekly_only" (e.g. a normal NIFTY Tuesday where
+    BANKNIFTY isn't also expiring) vs "weekly_and_monthly_combined"
+    (when NIFTY's weekly AND BANKNIFTY's monthly expiry land on the same
+    day — e.g. 25 Aug 2026). CRITICAL per Saim's 18 Aug warning: a
+    combined-expiry day's gamma-blast intensity is NOT directly
+    comparable to a weekly-only day's — pooling them together would
+    corrupt the learned "normal" acceleration ratio. review_acceleration_stats()
+    breaks results down by this tag specifically to avoid that.
 
     Measures: average per-minute price movement across the WHOLE day vs
-    average per-minute movement in the LAST 15 minutes specifically —
+    average per-minute movement in the LAST ~25 minutes specifically —
     if the pinning-release pattern is real, the ratio should be
     meaningfully > 1. Also identifies, if option snapshots were
     provided, which strike's premium moved the most in % terms during
@@ -99,6 +113,7 @@ def analyze_close_window(symbol, date_str, day_candles, option_rows_at_start=Non
 
     event = {
         "symbol": symbol, "date": date_str,
+        "expiry_type": expiry_type,
         "avg_move_whole_day": round(avg_move_whole_day, 2),
         "avg_move_close_window": round(avg_move_close_window, 2),
         "acceleration_ratio": acceleration_ratio,
@@ -115,21 +130,39 @@ def review_acceleration_stats():
     """
     Reports whether the pinning-release pattern actually holds up across
     tracked expiry days: average acceleration ratio (how much faster the
-    last 15 min moved vs the day's average), and how often a genuinely
+    last ~25 min moved vs the day's average), and how often a genuinely
     large strike-premium move (gamma blast) was observed.
+
+    CRITICAL: broken down by expiry_type (weekly_only vs
+    weekly_and_monthly_combined) SEPARATELY — per Saim's 18 Aug warning,
+    pooling these together would corrupt the baseline, since a combined
+    NIFTY-weekly + BANKNIFTY-monthly expiry day is expected to show a
+    genuinely bigger acceleration than a normal weekly-only day, and
+    treating them as one statistic would make future weekly-only days
+    look mispredicted against an inflated combined-day baseline.
     """
     entries = _read_all()
     if not entries:
         return {"total_expiry_days_tracked": 0, "message": "No expiry-day close events tracked yet."}
 
-    ratios = [e["acceleration_ratio"] for e in entries if e.get("acceleration_ratio") is not None]
-    big_blasts = [e for e in entries if e.get("biggest_strike_move") and abs(e["biggest_strike_move"]["pct_move"]) >= 50]
+    def _summarize(subset):
+        ratios = [e["acceleration_ratio"] for e in subset if e.get("acceleration_ratio") is not None]
+        big_blasts = [e for e in subset if e.get("biggest_strike_move") and abs(e["biggest_strike_move"]["pct_move"]) >= 50]
+        return {
+            "count": len(subset),
+            "avg_acceleration_ratio": round(sum(ratios) / len(ratios), 2) if ratios else None,
+            "days_with_50pct_plus_strike_move": len(big_blasts),
+        }
+
+    weekly_only = [e for e in entries if e.get("expiry_type") == "weekly_only"]
+    combined = [e for e in entries if e.get("expiry_type") == "weekly_and_monthly_combined"]
+    untagged = [e for e in entries if e.get("expiry_type") not in ("weekly_only", "weekly_and_monthly_combined")]
 
     return {
         "total_expiry_days_tracked": len(entries),
-        "avg_acceleration_ratio": round(sum(ratios) / len(ratios), 2) if ratios else None,
-        "days_with_50pct_plus_strike_move": len(big_blasts),
-        "examples": big_blasts[-3:],  # most recent few, for a quick look
+        "weekly_only": _summarize(weekly_only),
+        "weekly_and_monthly_combined": _summarize(combined),
+        "untagged_legacy_events": len(untagged),
     }
 
 
