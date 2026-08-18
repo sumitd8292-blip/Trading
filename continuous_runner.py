@@ -200,7 +200,23 @@ def run_once():
         # manual CSV snapshot — falls back to the manual snapshot only if
         # live fetch hasn't succeeded yet this run
         oi_bias = _latest_live_oi_bias.get(symbol) or latest_oi_bias(symbol)
-        vsa_bias = momentum_bias(candles)
+
+        # VSA/volume layer (fixed 18 Aug 2026): index candles never have
+        # volume (NIFTY/BANKNIFTY aren't directly traded, only their
+        # futures/options are) — confirmed live via GrowwMCP (volume: null
+        # on every candle). Fetch FUTURES candles in parallel (which DO
+        # have real volume) and use those for VSA instead of the index.
+        try:
+            futures_expiry_raw = _EXPIRY_CALCULATORS.get(symbol, get_next_tuesday_expiry)()
+            futures_expiry_fmt = datetime.strptime(futures_expiry_raw, "%Y-%m-%d").strftime("%d%b%y")
+            futures_candles = fetch_candles(symbol, f"{today} 09:15:00",
+                                             now_ist().strftime("%Y-%m-%d %H:%M:%S"),
+                                             segment="FNO", interval_minutes=1, expiry=futures_expiry_fmt)
+            vsa_bias = momentum_bias(futures_candles) if futures_candles else momentum_bias(candles)
+        except Exception as e:
+            print(f"[{now_ist()}] {symbol}: futures fetch for VSA failed, falling back to index (no volume) — {e}")
+            vsa_bias = momentum_bias(candles)
+
         s_bias = get_smc_bias(candles)
         result = score_setup(closes, highs, lows, oi_bias=oi_bias, vsa_bias=vsa_bias, smc_bias=s_bias, candles_for_trend=candles)
         log_signal(symbol, result, note=f"VPS continuous run, {today}")

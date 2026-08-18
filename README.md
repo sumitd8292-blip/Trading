@@ -298,3 +298,13 @@ well-defined questions instead of one undifferentiated outcome pool:
 Tested end-to-end (opened a tagged trade with option snapshot + VIX,
 closed it, confirmed premium P&L, time/strategy breakdown, and index-vs-
 premium comparison all compute correctly).
+
+## VSA Layer Fixed — Real Volume via Futures (18 Aug 2026)
+Confirmed live via GrowwMCP: NIFTY/BANKNIFTY INDEX candles have
+`volume: null` on every single candle (indices aren't directly traded,
+only their futures/options are) — this is a genuine, permanent
+limitation, not a bug. Fixed by fetching FUTURES candles in parallel
+(which DO have real volume, confirmed: e.g. 258050, 70200 units per
+5-min bar) and feeding those into price_momentum.momentum_bias()
+instead of the index candles. Falls back to index candles (still no
+volume, VSA stays neutral) if the futures fetch fails for any reason.
