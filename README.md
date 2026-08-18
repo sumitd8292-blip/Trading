@@ -239,3 +239,28 @@ just the index-level signal:
 `estimate_premium_move()`. Tested with fake data matching confirmed
 live structure — correctly picks nearest-to-spot strike and computes
 delta-scaled premium move.
+
+## Divergence Hypothesis Tracker (added 18 Aug 2026)
+Per Saim's explicit instruction: the agent shouldn't just passively log
+outcomes — it needs a specific, well-defined question to investigate, or
+it'll "watch things happen and let them go" without learning anything
+concrete.
+
+`divergence_tracker.py` encodes ONE precise hypothesis: when the live
+option-chain OI/PCR lean disagrees with the short-term price trend (e.g.
+OI BULLISH while price is trending DOWN), does price eventually move in
+OI's implied direction? If yes, how long does it take and how far does
+it move? If it doesn't resolve within 3 hours or by EOD, that's also
+logged as a valid data point ("OI didn't lead price that day").
+
+This is PURE OBSERVATION — does not feed into engine.py's live scoring
+(Saim was clear he doesn't want an active "divergence warning" signal
+yet). `review_divergence_stats()` reports the accumulated evidence:
+resolution rate, average time-to-resolve, average move size — once
+enough events have been tracked, this gives a genuine data-backed
+answer instead of a guess.
+
+Wired into continuous_runner.py's main loop (detects + checks resolution
+every tick). Tested end-to-end with simulated data (detected an event,
+correctly waited through an unresolved check, then correctly resolved
+it once price moved 20pts in OI's favor).

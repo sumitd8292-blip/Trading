@@ -43,6 +43,7 @@ from paper_trader import open_paper_trade, check_open_trades
 from price_momentum import momentum_bias
 from smc import smc_bias as get_smc_bias
 from groww_option_chain import parse_option_chain, compute_gamma_exposure, compute_oi_and_iv_bias, suggest_strike, estimate_premium_move
+from divergence_tracker import detect_and_log_divergence, check_divergence_resolution
 
 LOOP_INTERVAL_SECONDS = 60  # 1-minute granularity
 MARKET_OPEN = dtime(9, 12)
@@ -183,6 +184,20 @@ def run_once():
         s_bias = get_smc_bias(candles)
         result = score_setup(closes, highs, lows, oi_bias=oi_bias, vsa_bias=vsa_bias, smc_bias=s_bias, candles_for_trend=candles)
         log_signal(symbol, result, note=f"VPS continuous run, {today}")
+
+        # Divergence hypothesis-tracking (added 18 Aug 2026, Saim's explicit
+        # request): when live OI lean disagrees with the short-term price
+        # trend, log it and watch whether price eventually moves in OI's
+        # direction — pure observation, does NOT feed into scoring.
+        if oi_bias and len(closes) >= 6:
+            recent_direction = "UP" if closes[-1] > closes[-6] else "DOWN"
+            now_iso = now_ist().isoformat()
+            detect_and_log_divergence(symbol, today, oi_bias.get("lean"), recent_direction, closes[-1], now_iso)
+            div_closed = check_divergence_resolution(symbol, today, closes[-1], now_iso,
+                                                       is_eod=(now_ist().time() >= MARKET_CLOSE))
+            for d in div_closed:
+                print(f"[{now_ist()}] {symbol}: DIVERGENCE EVENT CLOSED — resolved={d['resolved']}, "
+                      f"{d['resolution_minutes']}min, {d['resolution_move_points']:+.1f}pts")
 
         # Self-generated paper trading (added 17 Aug 2026, Saim's request for
         # faster learning): check/close any open paper trade against latest
