@@ -56,12 +56,12 @@ _latest_live_gex = {}       # symbol -> latest live Gamma Exposure dict
 
 def get_next_tuesday_expiry(from_date=None):
     """
-    Both NIFTY and BANKNIFTY weekly options currently expire on Tuesdays
+    NIFTY (and SENSEX) have WEEKLY expiry, currently on Tuesdays
     (observed: 11-Aug, 18-Aug, 25-Aug 2026 are all Tuesdays). Returns
     today's date if today IS a Tuesday (expiry day itself), else the
-    next upcoming Tuesday, formatted as YYYY-MM-DD for the option-chain API.
-    NOTE: NSE could change the weekly expiry day again — if option-chain
-    fetches start failing with "no data", this is the first thing to check.
+    next upcoming Tuesday, formatted as YYYY-MM-DD.
+    NOTE: NSE could change the weekly expiry day again — if fetches
+    start failing with "no data", this is the first thing to check.
     """
     from datetime import timedelta
     d = from_date or now_ist().date()
@@ -70,44 +70,60 @@ def get_next_tuesday_expiry(from_date=None):
     return target.strftime("%Y-%m-%d")
 
 
-def refresh_live_option_chain():
+def get_monthly_expiry(from_date=None):
     """
-    Fetches live option chain for NIFTY + BANKNIFTY, computes OI/PCR and
-    Gamma Exposure, and updates the module-level caches used by run_once().
-    Called every OPTION_CHAIN_REFRESH_LOOPS iterations (not every loop —
-    it's a heavier call than a plain candle fetch).
-
-    NIFTY and BANKNIFTY don't always share the same weekly expiry date
-    (confirmed 18 Aug 2026: NIFTY expires today, BANKNIFTY's chain for
-    today came back empty — its next expiry is a week later) — so if the
-    computed Tuesday comes back empty, automatically retry one week later
-    before giving up.
+    BANKNIFTY has MONTHLY expiry (unlike NIFTY/SENSEX which are weekly)
+    — per Saim's 18 Aug 2026 correction. Currently falls on the LAST
+    Tuesday of the month. Returns that date; if it has already passed
+    this month, rolls to next month's last Tuesday.
     """
     from datetime import timedelta
-    base_expiry = get_next_tuesday_expiry()
-    for symbol in SYMBOLS:
-        payload = None
-        used_expiry = None
-        for attempt_expiry in [base_expiry,
-                                (datetime.strptime(base_expiry, "%Y-%m-%d").date() + timedelta(days=7)).strftime("%Y-%m-%d")]:
-            try:
-                p = fetch_option_chain(symbol, attempt_expiry)
-                spot = p.get("underlying_ltp") if isinstance(p, dict) else None
-                rows = parse_option_chain(p)
-                if rows and spot:
-                    payload, used_expiry = p, attempt_expiry
-                    break
-                else:
-                    print(f"[{now_ist()}] {symbol}: option chain empty for expiry {attempt_expiry}, trying next")
-            except Exception as e:
-                print(f"[{now_ist()}] {symbol}: option chain fetch failed for {attempt_expiry} — {e}")
+    import calendar
+    d = from_date or now_ist().date()
 
-        if not payload:
-            print(f"[{now_ist()}] {symbol}: no valid option chain found (tried {base_expiry} and +7d)")
+    def last_tuesday_of_month(year, month):
+        last_day = calendar.monthrange(year, month)[1]
+        last_date = datetime(year, month, last_day).date()
+        offset = (last_date.weekday() - 1) % 7  # back up to Tuesday=1
+        return last_date - timedelta(days=offset)
+
+    this_month_expiry = last_tuesday_of_month(d.year, d.month)
+    if d <= this_month_expiry:
+        return this_month_expiry.strftime("%Y-%m-%d")
+    # already passed — roll to next month
+    next_month = d.month + 1 if d.month < 12 else 1
+    next_year = d.year if d.month < 12 else d.year + 1
+    return last_tuesday_of_month(next_year, next_month).strftime("%Y-%m-%d")
+
+
+# Per-symbol expiry calculators — NIFTY/SENSEX weekly, BANKNIFTY monthly
+_EXPIRY_CALCULATORS = {
+    "NIFTY": get_next_tuesday_expiry,
+    "BANKNIFTY": get_monthly_expiry,
+}
+
+
+def refresh_live_option_chain():
+    """
+    Fetches live option chain for NIFTY (weekly expiry) + BANKNIFTY
+    (monthly expiry — see _EXPIRY_CALCULATORS), computes OI/PCR and
+    Gamma Exposure, and updates the module-level caches used by
+    run_once(). Called every OPTION_CHAIN_REFRESH_LOOPS iterations (not
+    every loop — it's a heavier call than a plain candle fetch).
+    """
+    for symbol in SYMBOLS:
+        expiry = _EXPIRY_CALCULATORS.get(symbol, get_next_tuesday_expiry)()
+        try:
+            payload = fetch_option_chain(symbol, expiry)
+            spot = payload.get("underlying_ltp") if isinstance(payload, dict) else None
+            rows = parse_option_chain(payload)
+            if not rows or not spot:
+                print(f"[{now_ist()}] {symbol}: option chain empty/no spot (expiry={expiry})")
+                continue
+        except Exception as e:
+            print(f"[{now_ist()}] {symbol}: option chain fetch failed for {expiry} — {e}")
             continue
 
-        spot = payload.get("underlying_ltp")
-        rows = parse_option_chain(payload)
         oi_iv = compute_oi_and_iv_bias(rows, spot)
         pcr = oi_iv["pcr"]
         lean = "BEARISH" if pcr > 1.1 else ("BULLISH" if pcr < 0.9 else "NEUTRAL")
@@ -118,7 +134,7 @@ def refresh_live_option_chain():
         }
         gex = compute_gamma_exposure(rows, spot)
         _latest_live_gex[symbol] = gex
-        print(f"[{now_ist()}] {symbol}: live option chain refreshed (expiry={used_expiry}) — "
+        print(f"[{now_ist()}] {symbol}: live option chain refreshed (expiry={expiry}) — "
               f"OI lean={lean} PCR={pcr}, GEX regime={gex.get('regime') if gex else 'n/a'}")
 
 
