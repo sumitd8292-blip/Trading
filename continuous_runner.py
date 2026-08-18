@@ -44,6 +44,7 @@ from price_momentum import momentum_bias
 from smc import smc_bias as get_smc_bias
 from groww_option_chain import parse_option_chain, compute_gamma_exposure, compute_oi_and_iv_bias, suggest_strike, estimate_premium_move, compute_volume_profile
 from divergence_tracker import detect_and_log_divergence, check_divergence_resolution
+from expiry_close_tracker import analyze_close_window, PRE_CLOSE_WINDOW_START
 
 LOOP_INTERVAL_SECONDS = 60  # 1-minute granularity
 MARKET_OPEN = dtime(9, 12)
@@ -55,6 +56,8 @@ _latest_live_oi_bias = {}   # symbol -> latest live OI/PCR dict (replaces stale 
 _latest_live_gex = {}       # symbol -> latest live Gamma Exposure dict
 _latest_option_rows = {}    # symbol -> (rows, spot) — full chain, for strike suggestions in alerts
 _latest_volume_profile = {} # symbol -> live option-volume activity dict
+_close_window_start_snapshot = {}  # symbol -> option rows captured at ~15:15, for expiry_close_tracker
+_close_window_analyzed_today = {}  # symbol -> date already analyzed (avoid re-running every loop tick)
 _latest_vix = None          # India VIX level, refreshed alongside option chain
 
 
@@ -259,6 +262,30 @@ def run_once():
         closed = check_open_trades(symbol, candles, is_eod=(now_ist().time() >= MARKET_CLOSE))
         for c in closed:
             print(f"[{now_ist()}] {symbol}: PAPER TRADE CLOSED — {c['outcome']} {c['outcome_points']:+.1f} pts ({c['exit_reason']})")
+
+        # Expiry-close "gamma blast" tracker (added 18 Aug 2026, Saim's
+        # explanation of the pinning-release pattern in the final minutes
+        # before close): capture an option-chain snapshot at the start of
+        # the pre-close window (~15:15), then once market has closed,
+        # compare it against the latest snapshot and the day's price
+        # candles to measure whether the last-15-min move was genuinely
+        # faster than the day's average (see expiry_close_tracker.py).
+        now_t = now_ist().time()
+        if now_t >= PRE_CLOSE_WINDOW_START and symbol not in _close_window_start_snapshot:
+            chain_data = _latest_option_rows.get(symbol)
+            if chain_data:
+                _close_window_start_snapshot[symbol] = chain_data[0]  # rows only
+                print(f"[{now_ist()}] {symbol}: captured pre-close-window option snapshot for gamma-blast tracking")
+
+        if now_t >= MARKET_CLOSE and _close_window_analyzed_today.get(symbol) != today:
+            chain_data = _latest_option_rows.get(symbol)
+            start_rows = _close_window_start_snapshot.get(symbol)
+            end_rows = chain_data[0] if chain_data else None
+            event = analyze_close_window(symbol, today, candles, option_rows_at_start=start_rows, option_rows_at_close=end_rows)
+            if event:
+                print(f"[{now_ist()}] {symbol}: EXPIRY-CLOSE analysis — acceleration_ratio={event['acceleration_ratio']}, "
+                      f"biggest_strike_move={event['biggest_strike_move']}")
+            _close_window_analyzed_today[symbol] = today
 
         if result["signal"] != "NONE":
             # Tag which entry logic actually fired (reversal vs trend-continuation)

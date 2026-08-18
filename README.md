@@ -319,3 +319,24 @@ side. High volume + unchanged OI suggests active intraday trading
 without new positioning; high volume + rising OI suggests fresh,
 committed positioning. Wired into continuous_runner.py's option-chain
 refresh cycle, logged alongside OI/GEX every ~5 min.
+
+## Expiry-Close "Gamma Blast" Tracker (added 18 Aug 2026)
+Encodes Saim's specific explanation of the pinning-release pattern: all
+day, option sellers write heavily near ATM (confirmed live today —
+massive dual-side OI buildup at 24200-24250), suppressing natural price
+movement. In the FINAL MINUTES before close, as sellers close positions,
+that suppressed momentum can release rapidly — a "gamma blast" where a
+strike's premium can jump from ₹1-2 to ₹50-150+ in minutes.
+
+`expiry_close_tracker.py`'s `analyze_close_window()` measures whether
+this is real: compares average per-minute price movement in the last 15
+min before close vs the day's whole-day average (an "acceleration
+ratio"), and identifies which specific strike's premium moved the most
+during the window. `review_acceleration_stats()` reports the
+accumulated evidence across tracked expiry days.
+
+Wired into continuous_runner.py: automatically captures an option-chain
+snapshot at the start of the pre-close window (~15:15) and runs the
+analysis right after market close, once per expiry day. Tested with
+simulated accelerating-price data (correctly detected 9.95x
+acceleration ratio).
