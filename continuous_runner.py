@@ -54,6 +54,25 @@ _option_chain_loop_counter = 0
 _latest_live_oi_bias = {}   # symbol -> latest live OI/PCR dict (replaces stale manual CSV snapshot)
 _latest_live_gex = {}       # symbol -> latest live Gamma Exposure dict
 _latest_option_rows = {}    # symbol -> (rows, spot) — full chain, for strike suggestions in alerts
+_latest_vix = None          # India VIX level, refreshed alongside option chain
+
+
+def refresh_vix():
+    """Fetches India VIX (signal-quality context — per Saim's 18 Aug
+    request to learn whether signal reliability degrades in high-VIX/
+    high-uncertainty conditions). Best-effort — if the symbol/segment
+    guess is wrong, fails silently and vix_level stays None elsewhere."""
+    global _latest_vix
+    try:
+        today_str = now_ist().strftime("%Y-%m-%d")
+        candles = fetch_candles("INDIAVIX", f"{today_str} 09:15:00",
+                                 now_ist().strftime("%Y-%m-%d %H:%M:%S"),
+                                 interval_minutes=5)
+        if candles:
+            _latest_vix = candles[-1]["close"]
+            print(f"[{now_ist()}] India VIX refreshed: {_latest_vix}")
+    except Exception as e:
+        print(f"[{now_ist()}] VIX fetch failed (non-fatal): {e}")
 
 
 def get_next_tuesday_expiry(from_date=None):
@@ -153,9 +172,10 @@ def run_once():
     today = now_ist().strftime("%Y-%m-%d")
     alerted = _load_alerted()
 
-    # Refresh live option chain (OI/PCR + Gamma Exposure) every N loops
+    # Refresh live option chain (OI/PCR + Gamma Exposure) and VIX every N loops
     if _option_chain_loop_counter % OPTION_CHAIN_REFRESH_LOOPS == 0:
         refresh_live_option_chain()
+        refresh_vix()
     _option_chain_loop_counter += 1
 
     for symbol in SYMBOLS:
@@ -213,9 +233,26 @@ def run_once():
             print(f"[{now_ist()}] {symbol}: PAPER TRADE CLOSED — {c['outcome']} {c['outcome_points']:+.1f} pts ({c['exit_reason']})")
 
         if result["signal"] != "NONE":
+            # Tag which entry logic actually fired (reversal vs trend-continuation)
+            # — per Saim's 18 Aug request to learn which wins more, and where/when
+            strategy_type = "trend_continuation" if any("TREND-CONTINUATION" in r for r in result["reasons"]) else "reversal"
+
+            # Capture an option snapshot at entry (for real premium P&L tracking)
+            option_snapshot = None
+            chain_data = _latest_option_rows.get(symbol)
+            if chain_data:
+                rows, spot = chain_data
+                sugg = suggest_strike(rows, spot, result["signal"])
+                if sugg:
+                    option_snapshot = {
+                        "strike": sugg["strike"], "option_type": sugg["option_type"],
+                        "delta": sugg["delta"], "ltp": sugg["ltp"], "theta": sugg.get("theta"),
+                    }
+
             open_paper_trade(symbol, today, result["signal"], closes[-1],
                               result.get("sl_points", 15), result.get("target_points", 25),
-                              result.get("layer_status", {}), result["score"], result["reasons"])
+                              result.get("layer_status", {}), result["score"], result["reasons"],
+                              strategy_type=strategy_type, option_snapshot=option_snapshot, vix_level=_latest_vix)
 
         if result["signal"] == "NONE":
             print(f"[{now_ist()}] {symbol}: no signal ({len(candles)} candles)")

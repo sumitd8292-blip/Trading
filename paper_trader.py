@@ -30,6 +30,7 @@ from Saim's actual executed positions (tracked in positions.py).
 import json
 import os
 from datetime import datetime
+from collections import defaultdict
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 PAPER_TRADES_PATH = os.path.join(BASE, "memory", "paper_trades.jsonl")
@@ -49,7 +50,8 @@ def _write_all(entries):
 
 
 def open_paper_trade(symbol, date_str, signal, entry_price, sl_points, target_points, layer_status, score, reasons,
-                      trail_trigger_points=15, trail_distance_points=15):
+                      trail_trigger_points=15, trail_distance_points=15, strategy_type=None,
+                      option_snapshot=None, vix_level=None):
     """
     Records a new self-generated paper trade using a TRAILING STOP exit
     (changed 17 Aug 2026 — backtest on 15 days of real NIFTY data showed
@@ -58,6 +60,21 @@ def open_paper_trade(symbol, date_str, signal, entry_price, sl_points, target_po
     `trail_trigger_points` in favor, staying `trail_distance_points`
     behind the best price reached. Rides the trend until trailing SL
     is hit or EOD forces a close.
+
+    strategy_type: which entry logic fired this trade — "reversal"
+    (RSI-based) or "trend_continuation" — tagged so learning_loop can
+    later compare which wins more often, per Saim's 18 Aug request to
+    track "which strategy is better in which regime".
+
+    option_snapshot: optional {strike, option_type, delta, theta, ltp}
+    from suggest_strike() at entry time — if provided, enables REAL
+    premium P&L estimation (Delta+Theta based) alongside the raw index-
+    point P&L, addressing the finding that index-point profit doesn't
+    always mean real rupee profit once Theta decay is accounted for.
+
+    vix_level: India VIX reading at entry time, if available — tagged
+    so learning_loop can later check whether signal quality degrades in
+    high-VIX (high uncertainty) conditions.
 
     One open trade per (symbol, date) at a time — if one's already open
     for today, skip (avoids overlapping paper positions from repeated
@@ -74,8 +91,10 @@ def open_paper_trade(symbol, date_str, signal, entry_price, sl_points, target_po
         "symbol": symbol,
         "date": date_str,
         "signal": signal,
+        "strategy_type": strategy_type,
         "entry_price": entry_price,
         "entry_time": datetime.now().isoformat(),
+        "entry_hour": datetime.now().hour,
         "current_sl_price": round(initial_sl_price, 2),
         "best_price": entry_price,
         "sl_points": sl_points,
@@ -84,11 +103,14 @@ def open_paper_trade(symbol, date_str, signal, entry_price, sl_points, target_po
         "layer_status": layer_status,
         "score": score,
         "reasons": reasons,
+        "option_snapshot": option_snapshot,
+        "vix_level": vix_level,
         "status": "OPEN",
         "outcome": None,
         "outcome_points": None,
         "exit_price": None,
         "exit_time": None,
+        "estimated_premium_pnl": None,
     }
     entries.append(trade)
     _write_all(entries)
@@ -152,12 +174,108 @@ def check_open_trades(symbol, latest_candles, is_eod=False):
             trade["exit_time"] = datetime.now().isoformat()
             trade["exit_reason"] = exit_reason
 
+            # Real premium P&L estimate (Delta + Theta), addressing the
+            # 17 Aug finding that index-point profit doesn't always mean
+            # real rupee profit — Theta decay can flip a winning index
+            # trade into a losing premium trade. Only computed if an
+            # option snapshot was captured at entry.
+            if trade.get("option_snapshot"):
+                snap = trade["option_snapshot"]
+                delta = abs(snap.get("delta") or 0)
+                theta = snap.get("theta")  # negative, points/day decay for the BUYER
+                hold_minutes = (datetime.fromisoformat(trade["exit_time"]) -
+                                 datetime.fromisoformat(trade["entry_time"])).total_seconds() / 60
+                premium_move_from_delta = pts * delta
+                theta_decay = (theta * (hold_minutes / 375)) if theta is not None else 0  # 375 = trading minutes/day
+                trade["estimated_premium_pnl"] = round(premium_move_from_delta + theta_decay, 2)
+
             record_outcome(symbol, trade["date"], outcome, points=round(pts, 2), exit_reason=exit_reason,
                             notes="auto-recorded by paper_trader.py (self-generated, not necessarily a real trade Saim took; trailing-stop exit)")
             closed_this_call.append(trade)
 
     _write_all(entries)
     return closed_this_call
+
+
+def review_by_time_and_strategy():
+    """
+    Breaks down closed paper trades by ENTRY HOUR (does the agent's
+    signal quality vary across the trading day — e.g. more fakeouts in
+    the first hour, more reliability in the last hour?) and by
+    STRATEGY_TYPE (reversal vs trend_continuation — which wins more
+    often, and in which time-of-day?). Addresses Saim's 18 Aug request
+    to learn "which approach is better, where, and when" rather than
+    treating all trades as one undifferentiated pool.
+    """
+    entries = [e for e in _read_all() if e["status"] == "CLOSED"]
+    if not entries:
+        return {"total": 0, "message": "No closed paper trades yet."}
+
+    by_hour = defaultdict(lambda: {"count": 0, "wins": 0, "points": 0})
+    by_strategy = defaultdict(lambda: {"count": 0, "wins": 0, "points": 0})
+    by_strategy_and_hour = defaultdict(lambda: defaultdict(lambda: {"count": 0, "wins": 0}))
+
+    for e in entries:
+        hour = e.get("entry_hour")
+        strat = e.get("strategy_type") or "unknown"
+        pts = e.get("outcome_points") or 0
+        is_win = e.get("outcome") == "WIN"
+
+        if hour is not None:
+            by_hour[hour]["count"] += 1
+            by_hour[hour]["points"] += pts
+            if is_win:
+                by_hour[hour]["wins"] += 1
+
+        by_strategy[strat]["count"] += 1
+        by_strategy[strat]["points"] += pts
+        if is_win:
+            by_strategy[strat]["wins"] += 1
+
+        if hour is not None:
+            by_strategy_and_hour[strat][hour]["count"] += 1
+            if is_win:
+                by_strategy_and_hour[strat][hour]["wins"] += 1
+
+    def _finalize(d):
+        out = {}
+        for k, v in d.items():
+            wr = round(v["wins"] / v["count"] * 100, 1) if v["count"] else 0
+            out[k] = {"trades": v["count"], "win_rate_pct": wr, "total_points": round(v.get("points", 0), 1)}
+        return out
+
+    return {
+        "by_entry_hour": _finalize(by_hour),
+        "by_strategy_type": _finalize(by_strategy),
+        "by_strategy_and_hour": {s: _finalize(hrs) for s, hrs in by_strategy_and_hour.items()},
+    }
+
+
+def review_premium_pnl():
+    """
+    Reports accumulated REAL PREMIUM P&L (Delta+Theta based, from
+    option_snapshot at entry) vs the raw INDEX-POINT P&L — addressing
+    the 17 Aug finding that these can diverge significantly (a
+    profitable index-point strategy can still lose real money to Theta
+    decay). Only includes trades where an option snapshot was captured.
+    """
+    entries = [e for e in _read_all() if e["status"] == "CLOSED" and e.get("estimated_premium_pnl") is not None]
+    if not entries:
+        return {"total": 0, "message": "No closed paper trades with option-premium data yet."}
+
+    index_pts_total = sum(e.get("outcome_points") or 0 for e in entries)
+    premium_pts_total = sum(e["estimated_premium_pnl"] for e in entries)
+    wins_by_index = sum(1 for e in entries if (e.get("outcome_points") or 0) > 0)
+    wins_by_premium = sum(1 for e in entries if e["estimated_premium_pnl"] > 0)
+
+    return {
+        "total_trades": len(entries),
+        "index_points_total": round(index_pts_total, 1),
+        "estimated_premium_points_total": round(premium_pts_total, 1),
+        "wins_by_index_points": wins_by_index,
+        "wins_by_premium_pnl": wins_by_premium,
+        "note": "premium P&L uses Delta (linear approx) + Theta decay over actual hold time — ignores Gamma, so treat as directional not precise",
+    }
 
 
 def summary():

@@ -183,6 +183,7 @@ def suggest_strike(rows, spot_price, direction, prefer="ATM"):
         "option_type": "CE" if option_type == "call" else "PE",
         "ltp": side.get("ltp"),
         "delta": side.get("delta"),
+        "theta": side.get("theta"),
         "iv": side.get("iv"),
         "oi": side.get("oi"),
     }

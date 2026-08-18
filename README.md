@@ -264,3 +264,37 @@ Wired into continuous_runner.py's main loop (detects + checks resolution
 every tick). Tested end-to-end with simulated data (detected an event,
 correctly waited through an unresolved check, then correctly resolved
 it once price moved 20pts in OI's favor).
+
+## Six New Learning Hypotheses Structured (18 Aug 2026)
+Per Saim's explicit request — the agent now tracks multiple specific,
+well-defined questions instead of one undifferentiated outcome pool:
+
+1. **Real premium P&L** (paper_trader.py): each paper trade now captures
+   an option snapshot (strike/Delta/Theta) at entry, and computes
+   estimated real premium P&L (Delta move + Theta decay over actual
+   hold time) alongside the raw index-point P&L — `review_premium_pnl()`
+   shows how much these diverge.
+2. **Time-of-day performance** (`review_by_time_and_strategy()`): breaks
+   down win rate by entry hour — does signal quality vary across the day?
+3. **FII/DII price-impact timing** (fii_price_impact_tracker.py): same
+   pattern as divergence_tracker.py — logs FII lean daily, checks over
+   subsequent days whether price actually moved 30+ pts in FII's implied
+   direction, and how long it took. Only activates on days Saim provides
+   FII/DII figures (still manual, no live feed).
+4. **Post-close momentum prediction accuracy**
+   (post_close_accuracy_tracker.py): logs each day's gap-bias prediction,
+   checks the next morning's actual open against it — the real answer to
+   "does this actually predict next-day gaps".
+5. **Reversal vs trend-continuation, by regime**: paper trades are now
+   tagged with `strategy_type` (which entry logic fired), and
+   `review_by_time_and_strategy()` cross-tabs strategy_type x entry_hour
+   so the agent can eventually see which approach wins in which
+   conditions.
+6. **VIX effect on signal quality**: continuous_runner.py now fetches
+   India VIX every ~5 min (best-effort, `refresh_vix()`) and tags it onto
+   each paper trade — once enough data accumulates, can check whether
+   win rate degrades in high-VIX conditions.
+
+Tested end-to-end (opened a tagged trade with option snapshot + VIX,
+closed it, confirmed premium P&L, time/strategy breakdown, and index-vs-
+premium comparison all compute correctly).
