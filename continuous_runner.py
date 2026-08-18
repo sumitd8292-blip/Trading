@@ -192,7 +192,11 @@ def run_once():
         if oi_bias and len(closes) >= 6:
             recent_direction = "UP" if closes[-1] > closes[-6] else "DOWN"
             now_iso = now_ist().isoformat()
-            detect_and_log_divergence(symbol, today, oi_bias.get("lean"), recent_direction, closes[-1], now_iso)
+            gex_ctx = _latest_live_gex.get(symbol)
+            expiry_str = _EXPIRY_CALCULATORS.get(symbol, get_next_tuesday_expiry)()
+            days_to_exp = (datetime.strptime(expiry_str, "%Y-%m-%d").date() - now_ist().date()).days
+            detect_and_log_divergence(symbol, today, oi_bias.get("lean"), recent_direction, closes[-1], now_iso,
+                                       gex_context=gex_ctx, days_to_expiry=days_to_exp)
             div_closed = check_divergence_resolution(symbol, today, closes[-1], now_iso,
                                                        is_eod=(now_ist().time() >= MARKET_CLOSE))
             for d in div_closed:

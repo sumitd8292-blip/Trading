@@ -48,13 +48,24 @@ def _write_all(entries):
             f.write(json.dumps(e) + "\n")
 
 
-def detect_and_log_divergence(symbol, date_str, oi_lean, price_trend_direction, current_price, current_time_iso):
+def detect_and_log_divergence(symbol, date_str, oi_lean, price_trend_direction, current_price, current_time_iso,
+                               gex_context=None, days_to_expiry=None):
     """
     Call this each loop tick with the current OI lean and the current
     short-term price trend direction (e.g. from trend_continuation.py or
     a simple recent-candles read). If they disagree (OI BULLISH vs price
     DOWN, or OI BEARISH vs price UP) and there's no already-open tracked
     event for this symbol+date, logs a new divergence event to watch.
+
+    gex_context: optional dict from compute_gamma_exposure() (net_gex,
+    regime, peak_gamma_strike) — captured alongside the event so future
+    analysis can separate "this happened in a high-gamma/near-expiry
+    window" from "this happened in a calmer mid-cycle window" (see
+    memory/greeks_knowledge.md Part 4 — weekly NIFTY vs monthly BANKNIFTY
+    expiry cycles mean the SAME divergence pattern may behave differently
+    depending on where in the expiry cycle it occurs).
+    days_to_expiry: optional int — how many days until THIS symbol's own
+    next expiry (weekly for NIFTY/SENSEX, monthly for BANKNIFTY).
 
     Does nothing if OI is NEUTRAL, or if they already agree, or if an
     event for this symbol+date is already open.
@@ -79,6 +90,9 @@ def detect_and_log_divergence(symbol, date_str, oi_lean, price_trend_direction, 
         "price_trend_at_detection": price_trend_direction,
         "price_at_detection": current_price,
         "detected_at": current_time_iso,
+        "gex_regime": (gex_context or {}).get("regime"),
+        "net_gex": (gex_context or {}).get("net_gex"),
+        "days_to_expiry": days_to_expiry,
         "status": "OPEN",
         "resolved": None,          # True/False once determined
         "resolution_minutes": None,
@@ -137,8 +151,11 @@ def review_divergence_stats():
     """
     Reports what the agent has learned so far: out of all CLOSED
     divergence events, how many resolved in OI's favor, average time to
-    resolve, and average move size. This is the actual answer to Saim's
-    question — built from real accumulated evidence, not assumption.
+    resolve, and average move size. Also breaks this down by GEX regime
+    (pinning vs acceleration) since the same divergence pattern may
+    behave differently in each (see memory/greeks_knowledge.md Part 4) —
+    this is the actual answer to Saim's question, built from real
+    accumulated evidence, not assumption.
     """
     entries = [e for e in _read_all() if e["status"] == "CLOSED"]
     if not entries:
@@ -156,6 +173,19 @@ def review_divergence_stats():
     if resolved:
         stats["avg_minutes_to_resolve"] = round(sum(e["resolution_minutes"] for e in resolved) / len(resolved), 1)
         stats["avg_move_points"] = round(sum(e["resolution_move_points"] for e in resolved) / len(resolved), 1)
+
+    # Breakdown by GEX regime, where available
+    by_regime = {}
+    for e in entries:
+        regime = e.get("gex_regime") or "unknown"
+        key = "pinning" if regime and "PINNING" in str(regime).upper() else ("acceleration" if regime and "ACCELERATION" in str(regime).upper() else "unknown")
+        by_regime.setdefault(key, {"total": 0, "resolved": 0})
+        by_regime[key]["total"] += 1
+        if e["resolved"]:
+            by_regime[key]["resolved"] += 1
+    for key, d in by_regime.items():
+        d["resolution_rate_pct"] = round(d["resolved"] / d["total"] * 100, 1) if d["total"] else None
+    stats["breakdown_by_gex_regime"] = by_regime
 
     return stats
 
