@@ -76,31 +76,50 @@ def refresh_live_option_chain():
     Gamma Exposure, and updates the module-level caches used by run_once().
     Called every OPTION_CHAIN_REFRESH_LOOPS iterations (not every loop —
     it's a heavier call than a plain candle fetch).
+
+    NIFTY and BANKNIFTY don't always share the same weekly expiry date
+    (confirmed 18 Aug 2026: NIFTY expires today, BANKNIFTY's chain for
+    today came back empty — its next expiry is a week later) — so if the
+    computed Tuesday comes back empty, automatically retry one week later
+    before giving up.
     """
-    expiry = get_next_tuesday_expiry()
+    from datetime import timedelta
+    base_expiry = get_next_tuesday_expiry()
     for symbol in SYMBOLS:
-        try:
-            payload = fetch_option_chain(symbol, expiry)
-            spot = payload.get("underlying_ltp") if isinstance(payload, dict) else None
-            rows = parse_option_chain(payload)
-            if not rows or not spot:
-                print(f"[{now_ist()}] {symbol}: option chain empty/no spot (expiry={expiry})")
-                continue
-            oi_iv = compute_oi_and_iv_bias(rows, spot)
-            # Derive a simple lean from PCR for compatibility with engine.py's oi_bias shape
-            pcr = oi_iv["pcr"]
-            lean = "BEARISH" if pcr > 1.1 else ("BULLISH" if pcr < 0.9 else "NEUTRAL")
-            _latest_live_oi_bias[symbol] = {
-                "lean": lean, "pcr": pcr,
-                "resistance_strike": oi_iv["resistance_strike"],
-                "support_strike": oi_iv["support_strike"],
-            }
-            gex = compute_gamma_exposure(rows, spot)
-            _latest_live_gex[symbol] = gex
-            print(f"[{now_ist()}] {symbol}: live option chain refreshed — OI lean={lean} PCR={pcr}, "
-                  f"GEX regime={gex.get('regime') if gex else 'n/a'}")
-        except Exception as e:
-            print(f"[{now_ist()}] {symbol}: option chain fetch failed — {e}")
+        payload = None
+        used_expiry = None
+        for attempt_expiry in [base_expiry,
+                                (datetime.strptime(base_expiry, "%Y-%m-%d").date() + timedelta(days=7)).strftime("%Y-%m-%d")]:
+            try:
+                p = fetch_option_chain(symbol, attempt_expiry)
+                spot = p.get("underlying_ltp") if isinstance(p, dict) else None
+                rows = parse_option_chain(p)
+                if rows and spot:
+                    payload, used_expiry = p, attempt_expiry
+                    break
+                else:
+                    print(f"[{now_ist()}] {symbol}: option chain empty for expiry {attempt_expiry}, trying next")
+            except Exception as e:
+                print(f"[{now_ist()}] {symbol}: option chain fetch failed for {attempt_expiry} — {e}")
+
+        if not payload:
+            print(f"[{now_ist()}] {symbol}: no valid option chain found (tried {base_expiry} and +7d)")
+            continue
+
+        spot = payload.get("underlying_ltp")
+        rows = parse_option_chain(payload)
+        oi_iv = compute_oi_and_iv_bias(rows, spot)
+        pcr = oi_iv["pcr"]
+        lean = "BEARISH" if pcr > 1.1 else ("BULLISH" if pcr < 0.9 else "NEUTRAL")
+        _latest_live_oi_bias[symbol] = {
+            "lean": lean, "pcr": pcr,
+            "resistance_strike": oi_iv["resistance_strike"],
+            "support_strike": oi_iv["support_strike"],
+        }
+        gex = compute_gamma_exposure(rows, spot)
+        _latest_live_gex[symbol] = gex
+        print(f"[{now_ist()}] {symbol}: live option chain refreshed (expiry={used_expiry}) — "
+              f"OI lean={lean} PCR={pcr}, GEX regime={gex.get('regime') if gex else 'n/a'}")
 
 
 def is_market_hours(now=None):
