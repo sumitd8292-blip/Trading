@@ -42,7 +42,7 @@ from run_agent_check import latest_oi_bias, _alert_key, _load_alerted, _mark_ale
 from paper_trader import open_paper_trade, check_open_trades
 from price_momentum import momentum_bias
 from smc import smc_bias as get_smc_bias
-from groww_option_chain import parse_option_chain, compute_gamma_exposure, compute_oi_and_iv_bias, suggest_strike, estimate_premium_move
+from groww_option_chain import parse_option_chain, compute_gamma_exposure, compute_oi_and_iv_bias, suggest_strike, estimate_premium_move, compute_volume_profile
 from divergence_tracker import detect_and_log_divergence, check_divergence_resolution
 
 LOOP_INTERVAL_SECONDS = 60  # 1-minute granularity
@@ -54,6 +54,7 @@ _option_chain_loop_counter = 0
 _latest_live_oi_bias = {}   # symbol -> latest live OI/PCR dict (replaces stale manual CSV snapshot)
 _latest_live_gex = {}       # symbol -> latest live Gamma Exposure dict
 _latest_option_rows = {}    # symbol -> (rows, spot) — full chain, for strike suggestions in alerts
+_latest_volume_profile = {} # symbol -> live option-volume activity dict
 _latest_vix = None          # India VIX level, refreshed alongside option chain
 
 
@@ -156,8 +157,19 @@ def refresh_live_option_chain():
         gex = compute_gamma_exposure(rows, spot)
         _latest_live_gex[symbol] = gex
         _latest_option_rows[symbol] = (rows, spot)
+
+        # Option VOLUME profile (added 18 Aug 2026, Saim's point: options
+        # generate more day-trading volume than futures, so this is a
+        # genuinely separate useful signal — distinct from OI, which
+        # reads carried/established positioning, Volume reads TODAY's
+        # actual live trading activity)
+        vol_profile = compute_volume_profile(rows, spot)
+        _latest_volume_profile[symbol] = vol_profile
+        vol_summary = (f"PCR-Vol={vol_profile['pcr_volume']}, most active CE={vol_profile['most_active_call_strike']}, "
+                        f"most active PE={vol_profile['most_active_put_strike']}") if vol_profile else "n/a"
+
         print(f"[{now_ist()}] {symbol}: live option chain refreshed (expiry={expiry}) — "
-              f"OI lean={lean} PCR={pcr}, GEX regime={gex.get('regime') if gex else 'n/a'}")
+              f"OI lean={lean} PCR={pcr}, GEX regime={gex.get('regime') if gex else 'n/a'}, {vol_summary}")
 
 
 def is_market_hours(now=None):

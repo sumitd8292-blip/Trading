@@ -308,3 +308,14 @@ limitation, not a bug. Fixed by fetching FUTURES candles in parallel
 5-min bar) and feeding those into price_momentum.momentum_bias()
 instead of the index candles. Falls back to index candles (still no
 volume, VSA stays neutral) if the futures fetch fails for any reason.
+
+## Option Volume Profile (added 18 Aug 2026)
+Per Saim's point that options generate MORE day-trading volume than
+futures — `compute_volume_profile()` in groww_option_chain.py now
+reads live option VOLUME (distinct from OI): total call/put volume near
+the money, PCR-Volume (activity-based, complementing PCR-OI which is
+positioning-based), and the single most-active-by-volume strike on each
+side. High volume + unchanged OI suggests active intraday trading
+without new positioning; high volume + rising OI suggests fresh,
+committed positioning. Wired into continuous_runner.py's option-chain
+refresh cycle, logged alongside OI/GEX every ~5 min.

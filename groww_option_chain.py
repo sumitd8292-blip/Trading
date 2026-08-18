@@ -199,3 +199,41 @@ def estimate_premium_move(suggested_strike, index_points_move):
         return None
     delta = abs(suggested_strike["delta"])
     return round(index_points_move * delta, 1)
+
+
+def compute_volume_profile(rows, spot_price, strike_range_pct=10.0):
+    """
+    Computes option VOLUME activity (distinct from OI — OI is
+    established/carried positions, Volume is TODAY's actual trading
+    activity). Per Saim's 18 Aug point: options generate more day-
+    trading volume than futures, so this is a genuinely useful separate
+    signal — a strike with sudden high volume but unchanged OI suggests
+    active intraday trading (not new positioning), while high volume
+    AND rising OI together suggest fresh, committed positioning.
+
+    Returns total call/put volume near the money, Put/Call volume ratio
+    (PCR-Volume — reads live activity, complementing PCR-OI which reads
+    carried positioning), and the single most-active-by-volume strike
+    on each side.
+    """
+    lo, hi = spot_price * (1 - strike_range_pct / 100), spot_price * (1 + strike_range_pct / 100)
+    near = [r for r in rows if lo <= r["strike"] <= hi]
+    if not near:
+        return None
+
+    total_call_vol = sum((r["call"]["volume"] or 0) for r in near if r["call"])
+    total_put_vol = sum((r["put"]["volume"] or 0) for r in near if r["put"])
+    pcr_volume = (total_put_vol / total_call_vol) if total_call_vol else 0
+
+    most_active_call = max((r for r in near if r["call"]), key=lambda r: r["call"]["volume"] or 0, default=None)
+    most_active_put = max((r for r in near if r["put"]), key=lambda r: r["put"]["volume"] or 0, default=None)
+
+    return {
+        "total_call_volume": total_call_vol,
+        "total_put_volume": total_put_vol,
+        "pcr_volume": round(pcr_volume, 3),
+        "most_active_call_strike": most_active_call["strike"] if most_active_call else None,
+        "most_active_call_volume": most_active_call["call"]["volume"] if most_active_call else None,
+        "most_active_put_strike": most_active_put["strike"] if most_active_put else None,
+        "most_active_put_volume": most_active_put["put"]["volume"] if most_active_put else None,
+    }
