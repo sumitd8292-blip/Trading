@@ -159,3 +159,42 @@ if __name__ == "__main__":
     oi_iv = compute_oi_and_iv_bias(rows, spot)
     print("\nOI/PCR:")
     print(json.dumps(oi_iv, indent=2))
+
+
+def suggest_strike(rows, spot_price, direction, prefer="ATM"):
+    """
+    Suggests a specific tradeable strike matching the signal direction.
+    direction: "LONG" (suggests a CALL) or "SHORT" (suggests a PUT)
+    prefer: "ATM" (closest to spot) — could extend later to "OTM"/"ITM"
+
+    Returns {strike, option_type, ltp, delta, iv, oi} for the suggested
+    contract, or None if no usable data.
+    """
+    option_type = "call" if direction == "LONG" else "put"
+    candidates = [r for r in rows if r.get(option_type) and r[option_type].get("delta") is not None]
+    if not candidates:
+        return None
+
+    atm_row = min(candidates, key=lambda r: abs(r["strike"] - spot_price))
+    side = atm_row[option_type]
+
+    return {
+        "strike": atm_row["strike"],
+        "option_type": "CE" if option_type == "call" else "PE",
+        "ltp": side.get("ltp"),
+        "delta": side.get("delta"),
+        "iv": side.get("iv"),
+        "oi": side.get("oi"),
+    }
+
+
+def estimate_premium_move(suggested_strike, index_points_move):
+    """
+    Rough estimate of how much the suggested option's premium would move
+    for a given index-point move, using its Delta (linear approximation
+    — ignores Gamma/Theta, so treat as a ballpark, not precise).
+    """
+    if not suggested_strike or suggested_strike.get("delta") is None:
+        return None
+    delta = abs(suggested_strike["delta"])
+    return round(index_points_move * delta, 1)

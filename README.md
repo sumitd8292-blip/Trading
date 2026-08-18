@@ -224,3 +224,18 @@ get_next_tuesday_expiry() (both NIFTY and BANKNIFTY currently expire
 Tuesdays — recheck this if NSE changes the expiry day again). Live OI
 bias now feeds engine.py's scoring in place of the old manual snapshot
 whenever available.
+
+## Strike Suggestion in Telegram Alerts (added 18 Aug 2026)
+Per Saim's request — alerts now include actionable option details, not
+just the index-level signal:
+- Suggested strike (ATM, matching signal direction — CALL for LONG, PUT
+  for SHORT), sourced from the live option chain cache
+- Current premium (LTP), Delta, IV of that strike
+- Rough estimated premium move for the signal's SL-point distance
+  (Delta-only linear estimate — explicitly flagged as ignoring
+  Gamma/Theta, not a precise projection)
+
+`groww_option_chain.py` gained `suggest_strike()` and
+`estimate_premium_move()`. Tested with fake data matching confirmed
+live structure — correctly picks nearest-to-spot strike and computes
+delta-scaled premium move.

@@ -42,7 +42,7 @@ from run_agent_check import latest_oi_bias, _alert_key, _load_alerted, _mark_ale
 from paper_trader import open_paper_trade, check_open_trades
 from price_momentum import momentum_bias
 from smc import smc_bias as get_smc_bias
-from groww_option_chain import parse_option_chain, compute_gamma_exposure, compute_oi_and_iv_bias
+from groww_option_chain import parse_option_chain, compute_gamma_exposure, compute_oi_and_iv_bias, suggest_strike, estimate_premium_move
 
 LOOP_INTERVAL_SECONDS = 60  # 1-minute granularity
 MARKET_OPEN = dtime(9, 12)
@@ -52,6 +52,7 @@ OPTION_CHAIN_REFRESH_LOOPS = 5  # fetch live option chain every 5 loops (~5 min)
 _option_chain_loop_counter = 0
 _latest_live_oi_bias = {}   # symbol -> latest live OI/PCR dict (replaces stale manual CSV snapshot)
 _latest_live_gex = {}       # symbol -> latest live Gamma Exposure dict
+_latest_option_rows = {}    # symbol -> (rows, spot) — full chain, for strike suggestions in alerts
 
 
 def get_next_tuesday_expiry(from_date=None):
@@ -134,6 +135,7 @@ def refresh_live_option_chain():
         }
         gex = compute_gamma_exposure(rows, spot)
         _latest_live_gex[symbol] = gex
+        _latest_option_rows[symbol] = (rows, spot)
         print(f"[{now_ist()}] {symbol}: live option chain refreshed (expiry={expiry}) — "
               f"OI lean={lean} PCR={pcr}, GEX regime={gex.get('regime') if gex else 'n/a'}")
 
@@ -206,6 +208,23 @@ def run_once():
             continue
 
         msg = format_signal_alert(symbol, result) + f"\n\nData date: {today} (live, VPS)"
+
+        # Strike suggestion (added 18 Aug 2026, Saim's request): tell him
+        # WHICH strike to actually look at, its current premium, Delta,
+        # and a rough estimate of how much that premium would move if the
+        # index reaches its SL/target distance — using the cached live
+        # option chain (refreshed every ~5 min in refresh_live_option_chain()).
+        chain_data = _latest_option_rows.get(symbol)
+        if chain_data:
+            rows, spot = chain_data
+            strike_sugg = suggest_strike(rows, spot, result["signal"])
+            if strike_sugg:
+                sl_pts = result.get("sl_points", 15)
+                move_at_sl = estimate_premium_move(strike_sugg, sl_pts)
+                msg += (f"\n\n<b>Suggested strike:</b> {strike_sugg['strike']:.0f} {strike_sugg['option_type']}\n"
+                        f"LTP: {strike_sugg['ltp']} | Delta: {strike_sugg['delta']} | IV: {strike_sugg['iv']}\n"
+                        f"Est. premium move for {sl_pts}pt index move: ~{move_at_sl} "
+                        f"(rough, Delta-only estimate — ignores Gamma/Theta)")
         send_result = send_telegram_message(msg)
         print(f"[{now_ist()}] {symbol}: ALERT SENT — {send_result.get('ok')}")
         if send_result.get("ok"):
