@@ -378,3 +378,16 @@ acceleration ratio).
    time-decay effect, not price-move — already handled separately in
    paper_trader.py's real premium P&L calc). Alert wording updated to
    reflect this.
+
+## Critical VSA Bug Fixed: Futures Only Have Monthly Contracts (19 Aug 2026)
+Found while reviewing why VSA might still show "no volume data" for
+some weeks: continuous_runner.py's futures-fetch for VSA was using
+_EXPIRY_CALCULATORS[symbol] (NIFTY's WEEKLY Tuesday expiry — correct
+for OPTIONS) as the futures contract expiry. But NIFTY/BANKNIFTY index
+FUTURES only exist as MONTHLY contracts (near/mid/far month) — there
+is no such thing as a weekly futures contract (only options have weekly
+expiry). Using a weekly date would silently fail to find a matching
+futures contract on any week where that Tuesday wasn't also the
+monthly expiry. Fixed: VSA's futures fetch now always uses
+get_monthly_expiry() regardless of symbol, since that's the only valid
+expiry type for futures contracts.

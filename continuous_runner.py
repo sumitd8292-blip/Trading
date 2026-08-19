@@ -225,8 +225,17 @@ def run_once():
         # futures/options are) — confirmed live via GrowwMCP (volume: null
         # on every candle). Fetch FUTURES candles in parallel (which DO
         # have real volume) and use those for VSA instead of the index.
+        #
+        # BUG FIX (19 Aug 2026): was using _EXPIRY_CALCULATORS[symbol]
+        # (weekly Tuesday for NIFTY) for the FUTURES contract — but NIFTY
+        # index futures only exist as MONTHLY contracts (near/mid/far
+        # month), there is no such thing as a weekly futures contract
+        # (only OPTIONS have weekly expiry). Using a weekly date here
+        # would silently fail on any week where that Tuesday isn't also
+        # the monthly expiry, since no such futures contract exists.
+        # Futures must always use the MONTHLY expiry regardless of symbol.
         try:
-            futures_expiry_raw = _EXPIRY_CALCULATORS.get(symbol, get_next_tuesday_expiry)()
+            futures_expiry_raw = get_monthly_expiry()
             futures_expiry_fmt = datetime.strptime(futures_expiry_raw, "%Y-%m-%d").strftime("%d%b%y")
             fut_start = min(dtime(9, 15), now_ist().time())
             futures_candles = fetch_candles(symbol, f"{today} {fut_start.strftime('%H:%M:%S')}",
