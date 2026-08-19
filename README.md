@@ -516,3 +516,27 @@ Systematic implementation of everything discussed:
 
 All four wired into continuous_runner.py's main loop. Tested end-to-end
 (all 4 modules pass with realistic simulated data).
+
+## Footprint Proxy — Buyer/Seller Aggression, No WebSocket Needed (19 Aug 2026)
+Saim's clarification: true tick-by-tick footprint data would need
+WebSocket streaming (bigger infrastructure change), but he doesn't need
+real-time speed — robust data from our EXISTING polling cadence (1-3 min)
+is enough. footprint_proxy.py builds a SAMPLED proxy instead:
+
+Each time we already fetch a quote (reusing order_flow_depth's existing
+3-min call, no new data source), classify the last trade as
+BUYER_AGGRESSIVE or SELLER_AGGRESSIVE based on whether last_price sits
+closer to the ask or the bid (standard Lee-Ready style classification —
+last_price/bid_price/offer_price are all in the SAME payload
+groww_api.fetch_quote_depth already returns). Accumulate these samples
+per price-bucket over the day. `check_trend_footprint_shift()` answers
+Saim's exact question: as price rises, is buyer-percentage increasing
+(seller objection weakening)? As price falls, is it decreasing (buyer
+support weakening)? Tested with simulated data: correctly detected
+increasing buyer% (33%->67%->100%) as price rose, correctly interpreted
+as "seller objection weakening".
+
+This is a coarser approximation than true footprint (samples every ~3
+min, not every tick) but requires zero new infrastructure — reuses data
+already being fetched. True WebSocket-based tick footprint remains a
+possible future upgrade if this proxy proves useful but insufficient.

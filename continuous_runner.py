@@ -55,6 +55,7 @@ from multi_timeframe_context import get_multi_timeframe_context
 from fvg_touch_tracker import check_fvg_touch, check_touch_resolution
 from session_behavior_tracker import analyze_session_split
 from smc import find_recent_fvgs
+from footprint_proxy import classify_trade_aggression, record_footprint_sample, get_footprint_summary, check_trend_footprint_shift
 
 LOOP_INTERVAL_SECONDS = 60  # 1-minute granularity
 MARKET_OPEN = dtime(9, 12)
@@ -126,6 +127,22 @@ def refresh_order_flow_depth():
             payload = fetch_quote_depth(trading_symbol, exchange="NSE", segment="FNO")
             imbalance = compute_depth_imbalance(payload)
             _latest_depth_imbalance[symbol] = imbalance
+
+            # Footprint proxy sampling (added 19 Aug 2026, per Saim's
+            # buyer/seller-objection discussion) — reuses this SAME quote
+            # payload (already has last_price/bid/offer) rather than
+            # needing separate WebSocket tick infrastructure. Samples the
+            # UNDERLYING index price level (not the option premium) since
+            # that's what Saim is actually asking about — using `spot` as
+            # the price-level bucket and this option's trade as a proxy
+            # tick (best-effort; a true underlying-level footprint would
+            # need the underlying's own bid/ask, which indices don't have
+            # since they're not directly traded — this samples the ATM
+            # option's aggression as the closest available proxy).
+            aggression = classify_trade_aggression(payload)
+            if aggression:
+                record_footprint_sample(symbol, now_ist().strftime("%Y-%m-%d"), spot, aggression,
+                                         payload.get("last_trade_quantity"), now_ist().isoformat())
 
             # Order-size anomaly detection (added 19 Aug 2026, per Saim's
             # "news is lagging, big capital moves first" discussion — a
