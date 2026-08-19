@@ -48,6 +48,7 @@ from expiry_close_tracker import analyze_close_window, PRE_CLOSE_WINDOW_START
 from greeks_bias import compute_greeks_bias
 from fii_dii import get_latest_manual_fii_bias
 from order_flow_depth import compute_depth_imbalance, detect_absorption
+from absorption_tracker import log_absorption_event, check_absorption_resolution
 from groww_api import fetch_quote_depth
 
 LOOP_INTERVAL_SECONDS = 60  # 1-minute granularity
@@ -100,6 +101,7 @@ def refresh_order_flow_depth():
                 if absorption and absorption["absorption_detected"]:
                     print(f"[{now_ist()}] {symbol}: ⚠️ ABSORPTION DETECTED — {absorption['interpretation']} "
                           f"(visible_depth_ratio={absorption['visible_depth_ratio']}, wall={absorption['wall']})")
+                    log_absorption_event(symbol, now_ist().strftime("%Y-%m-%d"), absorption, spot, now_ist().isoformat())
                 elif imbalance["lean"] != "NEUTRAL":
                     print(f"[{now_ist()}] {symbol}: depth imbalance={imbalance['lean']} "
                           f"(visible_depth_ratio={imbalance['visible_depth_ratio']}), OI={oi_bias.get('lean')} — agree")
@@ -348,6 +350,12 @@ def run_once():
             for d in div_closed:
                 print(f"[{now_ist()}] {symbol}: DIVERGENCE EVENT CLOSED — resolved={d['resolved']}, "
                       f"{d['resolution_minutes']}min, {d['resolution_move_points']:+.1f}pts")
+
+            absorp_closed = check_absorption_resolution(symbol, today, closes[-1], now_iso,
+                                                          is_eod=(now_ist().time() >= MARKET_CLOSE))
+            for a in absorp_closed:
+                print(f"[{now_ist()}] {symbol}: ABSORPTION EVENT CLOSED — {a['resolved_direction']}, "
+                      f"{a['resolution_minutes']}min, {a['resolution_move_points']:+.1f}pts")
 
         # Self-generated paper trading (added 17 Aug 2026, Saim's request for
         # faster learning): check/close any open paper trade against latest

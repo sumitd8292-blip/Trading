@@ -466,3 +466,24 @@ real depth data fetched today: correctly found a 5,330-qty sell wall at
 50.50 causing SELL_HEAVY visible depth despite whole-book aggregate
 looking roughly balanced — and correctly flagged absorption against a
 BULLISH OI reading.
+
+## Confidence Tiers + Absorption Outcome Tracking (19 Aug 2026)
+Per late-session discussion with Saim about mechanical vs behavioral
+signals: `confidence_tiers.py` classifies each layer as "mechanical"
+(formula-driven — Greeks, SMC structure, VSA effort-vs-result — should
+hold consistently, a wrong read is more surprising) or "behavioral"
+(reflects a guess about other participants' intent — OI positioning,
+FII/DII flows — expected to be wrong sometimes since it's not a
+formula). `learning_loop.review_performance()` now reports a
+confidence_tier_summary breaking down win rate by tier — the actual
+test of whether mechanical signals really are more reliable than
+behavioral ones, once enough data accumulates.
+
+`absorption_tracker.py` (same pattern as divergence_tracker.py) tracks
+whether order_flow_depth.py's absorption detections actually resolve in
+OI's favor or the order-book wall's favor — logs each absorption event,
+checks over the next 2 hours whether price moves 15+pts toward OI's
+implied direction (OI_WON) or the wall's direction (WALL_WON), or times
+out (INCONCLUSIVE). `review_absorption_stats()` reports the real
+win-rate of this behavioral-tier signal. Wired into continuous_runner.py.
+Tested end-to-end (correctly logged and resolved a simulated event).

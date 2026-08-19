@@ -139,6 +139,28 @@ def review_performance(min_trades_for_layer_stat=3):
                 suggestions.append(f"{layer}: when it DISAGREED, win rate dropped to {disagree_wr:.0f}% "
                                     f"({disagree_stats['count']} trades) — the 'treat with caution' flag is earning its keep")
 
+    # Confidence-tier breakdown (added 19 Aug 2026, per Saim's point that
+    # some layers are MECHANICAL/formula-based (Greeks, SMC, VSA — should
+    # hold consistently, a wrong read is more surprising) while others are
+    # BEHAVIORAL (OI, FII/DII — reflect a guess about other participants'
+    # intent, which is expected to be wrong sometimes since it's not a
+    # formula). This shows whether that expectation actually holds up:
+    # mechanical-tier layers should show higher/more consistent agree-win-rates
+    # than behavioral-tier layers, over enough data.
+    from confidence_tiers import get_tier
+    tier_breakdown = defaultdict(lambda: {"count": 0, "wins": 0})
+    for layer, statuses in layer_breakdown.items():
+        tier = get_tier(layer)
+        agree = statuses.get("agree")
+        if agree:
+            tier_breakdown[tier]["count"] += agree["count"]
+            tier_breakdown[tier]["wins"] += agree["wins"]
+    tier_summary = {
+        tier: {"trades_where_layer_agreed": d["count"],
+               "win_rate_pct": round(d["wins"] / d["count"] * 100, 1) if d["count"] else None}
+        for tier, d in tier_breakdown.items()
+    }
+
     return {
         "total_trades_with_outcome": total,
         "wins": wins,
@@ -147,6 +169,7 @@ def review_performance(min_trades_for_layer_stat=3):
         "total_points": round(total_points, 1),
         "avg_points_per_trade": round(total_points / total, 2) if total else 0,
         "layer_summary": layer_summary,
+        "confidence_tier_summary": tier_summary,
         "suggestions": suggestions,
     }
 
