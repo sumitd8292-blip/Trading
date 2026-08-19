@@ -572,3 +572,15 @@ sampling interval can miss very fast single-minute moves (e.g. today's
 14:35 spike); (3) this validation function exists now but isn't yet
 wired into an automatic end-of-trade report — that's the natural next
 step once enough trades accumulate to test it against.
+
+## Diagnostic Logging Added for Silent Paper-Trade-Open Failure (19 Aug 2026)
+Saim found: signals were firing (~20 log lines) but daily_paper_summary.py
+showed ZERO paper trades opened for the day — a genuine unexplained gap.
+The paper-trade-opening block wasn't wrapped in try/except, so any
+exception in suggest_strike() or elsewhere would silently prevent the
+trade from opening without a clear error message. Added: explicit
+"FRESH SIGNAL detected" log before attempting to open, explicit success/
+failure/blocked-by-already-open logging after, and full try/except with
+traceback around the whole block. This won't fix an underlying bug by
+itself, but will make the exact failure point visible in tomorrow's logs
+instead of failing silently.

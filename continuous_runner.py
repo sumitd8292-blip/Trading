@@ -517,26 +517,37 @@ def run_once():
         _last_signal_state[symbol] = result["signal"]
 
         if is_fresh_signal:
-            # Tag which entry logic actually fired (reversal vs trend-continuation)
-            # — per Saim's 18 Aug request to learn which wins more, and where/when
-            strategy_type = "trend_continuation" if any("TREND-CONTINUATION" in r for r in result["reasons"]) else "reversal"
+            print(f"[{now_ist()}] {symbol}: FRESH SIGNAL detected — {result['signal']}, attempting to open paper trade...")
+            try:
+                # Tag which entry logic actually fired (reversal vs trend-continuation)
+                # — per Saim's 18 Aug request to learn which wins more, and where/when
+                strategy_type = "trend_continuation" if any("TREND-CONTINUATION" in r for r in result["reasons"]) else "reversal"
 
-            # Capture an option snapshot at entry (for real premium P&L tracking)
-            option_snapshot = None
-            chain_data = _latest_option_rows.get(symbol)
-            if chain_data:
-                rows, spot = chain_data
-                sugg = suggest_strike(rows, spot, result["signal"])
-                if sugg:
-                    option_snapshot = {
-                        "strike": sugg["strike"], "option_type": sugg["option_type"],
-                        "delta": sugg["delta"], "ltp": sugg["ltp"], "theta": sugg.get("theta"),
-                    }
+                # Capture an option snapshot at entry (for real premium P&L tracking)
+                option_snapshot = None
+                chain_data = _latest_option_rows.get(symbol)
+                if chain_data:
+                    rows, spot = chain_data
+                    sugg = suggest_strike(rows, spot, result["signal"])
+                    if sugg:
+                        option_snapshot = {
+                            "strike": sugg["strike"], "option_type": sugg["option_type"],
+                            "delta": sugg["delta"], "ltp": sugg["ltp"], "theta": sugg.get("theta"),
+                        }
 
-            open_paper_trade(symbol, today, result["signal"], closes[-1],
-                              result.get("sl_points", 15), result.get("target_points", 25),
-                              result.get("layer_status", {}), result["score"], result["reasons"],
-                              strategy_type=strategy_type, option_snapshot=option_snapshot, vix_level=_latest_vix)
+                pt_result = open_paper_trade(symbol, today, result["signal"], closes[-1],
+                                              result.get("sl_points", 15), result.get("target_points", 25),
+                                              result.get("layer_status", {}), result["score"], result["reasons"],
+                                              strategy_type=strategy_type, option_snapshot=option_snapshot, vix_level=_latest_vix)
+                if pt_result is None:
+                    print(f"[{now_ist()}] {symbol}: open_paper_trade() returned None — likely blocked "
+                          f"(already an OPEN trade for {symbol}/{today} in paper_trades.jsonl)")
+                else:
+                    print(f"[{now_ist()}] {symbol}: PAPER TRADE OPENED — entry={closes[-1]}, strategy={strategy_type}")
+            except Exception as e:
+                import traceback
+                print(f"[{now_ist()}] {symbol}: PAPER TRADE OPEN FAILED — {e}")
+                print(traceback.format_exc())
 
         if result["signal"] == "NONE":
             print(f"[{now_ist()}] {symbol}: no signal ({len(candles)} candles)")
