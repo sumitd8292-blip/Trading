@@ -45,6 +45,8 @@ from smc import smc_bias as get_smc_bias
 from groww_option_chain import parse_option_chain, compute_gamma_exposure, compute_oi_and_iv_bias, suggest_strike, estimate_premium_move, compute_volume_profile
 from divergence_tracker import detect_and_log_divergence, check_divergence_resolution
 from expiry_close_tracker import analyze_close_window, PRE_CLOSE_WINDOW_START
+from greeks_bias import compute_greeks_bias
+from fii_dii import get_latest_manual_fii_bias
 
 LOOP_INTERVAL_SECONDS = 60  # 1-minute granularity
 MARKET_OPEN = dtime(9, 12)
@@ -236,7 +238,33 @@ def run_once():
             vsa_bias = momentum_bias(candles)
 
         s_bias = get_smc_bias(candles)
-        result = score_setup(closes, highs, lows, oi_bias=oi_bias, vsa_bias=vsa_bias, smc_bias=s_bias, candles_for_trend=candles)
+
+        # FIX (19 Aug 2026, Saim caught this): greeks_bias and fii_bias
+        # were NEVER passed to score_setup() here — engine.py correctly
+        # reported "NOT YET INTEGRATED" for both even though live Gamma/
+        # OI data and (if provided) manual FII data actually exist.
+        # Convert the already-fetched live option-chain rows into the
+        # flat {strikePrice, optionType, delta, iv, ...} shape
+        # greeks_bias.compute_greeks_bias() expects, and wire in FII/DII.
+        greeks_bias_val = None
+        chain_data_for_greeks = _latest_option_rows.get(symbol)
+        if chain_data_for_greeks:
+            rows, spot = chain_data_for_greeks
+            flat_contracts = []
+            for r in rows:
+                for side, opt_type in (("call", "CE"), ("put", "PE")):
+                    if r.get(side):
+                        flat_contracts.append({
+                            "strikePrice": r["strike"], "optionType": opt_type,
+                            "delta": r[side].get("delta"), "iv": r[side].get("iv"),
+                            "theta": r[side].get("theta"), "gamma": r[side].get("gamma"),
+                        })
+            greeks_bias_val = compute_greeks_bias(flat_contracts, spot)
+
+        fii_bias_val = get_latest_manual_fii_bias()
+
+        result = score_setup(closes, highs, lows, oi_bias=oi_bias, vsa_bias=vsa_bias, smc_bias=s_bias,
+                              greeks_bias=greeks_bias_val, fii_bias=fii_bias_val, candles_for_trend=candles)
         log_signal(symbol, result, note=f"VPS continuous run, {today}")
 
         # Divergence hypothesis-tracking (added 18 Aug 2026, Saim's explicit
@@ -349,7 +377,7 @@ def run_once():
                 msg += (f"\n\n<b>Suggested strike:</b> {strike_sugg['strike']:.0f} {strike_sugg['option_type']}\n"
                         f"LTP: {strike_sugg['ltp']} | Delta: {strike_sugg['delta']} | IV: {strike_sugg['iv']}\n"
                         f"Est. premium move for {sl_pts}pt index move: ~{move_at_sl} "
-                        f"(rough, Delta-only estimate — ignores Gamma/Theta)")
+                        f"(Delta+Gamma estimate; excludes Theta time-decay)")
         send_result = send_telegram_message(msg)
         print(f"[{now_ist()}] {symbol}: ALERT SENT — {send_result.get('ok')}")
         if send_result.get("ok"):

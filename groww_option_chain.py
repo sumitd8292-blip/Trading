@@ -184,6 +184,7 @@ def suggest_strike(rows, spot_price, direction, prefer="ATM"):
         "ltp": side.get("ltp"),
         "delta": side.get("delta"),
         "theta": side.get("theta"),
+        "gamma": side.get("gamma"),
         "iv": side.get("iv"),
         "oi": side.get("oi"),
     }
@@ -191,14 +192,30 @@ def suggest_strike(rows, spot_price, direction, prefer="ATM"):
 
 def estimate_premium_move(suggested_strike, index_points_move):
     """
-    Rough estimate of how much the suggested option's premium would move
-    for a given index-point move, using its Delta (linear approximation
-    — ignores Gamma/Theta, so treat as a ballpark, not precise).
+    Estimate of how much the suggested option's premium would move for a
+    given index-point move.
+
+    IMPROVED (19 Aug 2026, per Saim's question "why ignore Gamma/Theta"):
+    now uses a proper 2nd-order Taylor approximation when Gamma is
+    available — ΔPremium ≈ Delta×ΔS + 0.5×Gamma×(ΔS)² — which is
+    meaningfully more accurate for larger index moves than the old pure-
+    Delta linear estimate (Delta alone understates the move because
+    Gamma means Delta itself increases as price moves in the trade's
+    favor). Theta is intentionally NOT applied here — Theta is a
+    time-decay effect (₹/day), not a price-move effect, and mixing it
+    into a point-move estimate would conflate two different things;
+    Theta decay is already handled separately in paper_trader.py's real
+    premium P&L calculation (Delta+Theta over actual hold time).
     """
     if not suggested_strike or suggested_strike.get("delta") is None:
         return None
     delta = abs(suggested_strike["delta"])
-    return round(index_points_move * delta, 1)
+    gamma = suggested_strike.get("gamma")
+    linear_term = index_points_move * delta
+    if gamma is not None:
+        quadratic_term = 0.5 * gamma * (index_points_move ** 2)
+        return round(linear_term + quadratic_term, 1)
+    return round(linear_term, 1)
 
 
 def compute_volume_profile(rows, spot_price, strike_range_pct=10.0):

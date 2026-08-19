@@ -359,3 +359,22 @@ acceleration ratio).
    continuous_runner.py by checking whether more than one tracked
    symbol expires on the same date. review_acceleration_stats() reports
    these as separate breakdowns, never pooled.
+
+## Two Bugs Fixed Per Saim's 19 Aug Live Alert Review
+1. **Greeks/FII "NOT YET INTEGRATED" despite having live data**: found
+   that continuous_runner.py's score_setup() call never actually passed
+   greeks_bias or fii_bias parameters — engine.py was correctly
+   reporting them as unavailable because, from its perspective, they
+   truly were None, even though live Gamma/OI option-chain data and
+   (when provided) manual FII data existed elsewhere in the codebase.
+   Fixed: converts the already-fetched live option-chain rows into the
+   flat format greeks_bias.compute_greeks_bias() expects and wires it
+   in; also wires in fii_dii.get_latest_manual_fii_bias().
+2. **Premium-move estimate improved (Delta+Gamma, not Delta-only)**:
+   estimate_premium_move() now uses a proper 2nd-order Taylor
+   approximation (ΔPremium ≈ Delta×ΔS + 0.5×Gamma×ΔS²) when Gamma data
+   is available, meaningfully more accurate for larger moves than pure
+   linear Delta. Theta intentionally still excluded here (it's a
+   time-decay effect, not price-move — already handled separately in
+   paper_trader.py's real premium P&L calc). Alert wording updated to
+   reflect this.
