@@ -452,3 +452,17 @@ This is intentionally a SEPARATE signal from divergence_tracker.py
 (which compares OI vs REALIZED price movement) — this compares OI vs
 the actual order book in real time, a genuinely different microstructure
 read.
+
+## Order Flow Depth — All 5 Levels + Wall Detection (19 Aug 2026, refined)
+Saim asked specifically: "does it use all 5 levels, or just the top?"
+Previously only totalBuyQty/totalSellQty (whole-exchange aggregate) and
+level-1 were captured. Fixed: now sums buy/sell quantity across ALL 5
+visible price levels (visible_depth_ratio — the actionable, immediate
+picture) and separately identifies the single HEAVIEST level on each
+side (the "wall" — which exact price, how much size) since a large
+order concentrated at one specific level, not spread evenly, is exactly
+the manual-order-punching-defense scenario Saim described. Tested with
+real depth data fetched today: correctly found a 5,330-qty sell wall at
+50.50 causing SELL_HEAVY visible depth despite whole-book aggregate
+looking roughly balanced — and correctly flagged absorption against a
+BULLISH OI reading.

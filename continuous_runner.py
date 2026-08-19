@@ -99,10 +99,10 @@ def refresh_order_flow_depth():
                 absorption = detect_absorption(oi_bias.get("lean"), imbalance)
                 if absorption and absorption["absorption_detected"]:
                     print(f"[{now_ist()}] {symbol}: ⚠️ ABSORPTION DETECTED — {absorption['interpretation']} "
-                          f"(imbalance_ratio={absorption['imbalance_ratio']})")
+                          f"(visible_depth_ratio={absorption['visible_depth_ratio']}, wall={absorption['wall']})")
                 elif imbalance["lean"] != "NEUTRAL":
                     print(f"[{now_ist()}] {symbol}: depth imbalance={imbalance['lean']} "
-                          f"(ratio={imbalance['imbalance_ratio']}), OI={oi_bias.get('lean')} — agree")
+                          f"(visible_depth_ratio={imbalance['visible_depth_ratio']}), OI={oi_bias.get('lean')} — agree")
         except Exception as e:
             print(f"[{now_ist()}] {symbol}: order-flow depth fetch failed (non-fatal) — {e}")
 

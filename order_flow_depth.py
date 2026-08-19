@@ -24,42 +24,59 @@ def compute_depth_imbalance(quote_payload):
     quote_payload: the dict returned by groww_api.fetch_quote_depth()
     (has totalBuyQty, totalSellQty, buyBook, sellBook with 5 levels each)
 
-    Returns {total_buy_qty, total_sell_qty, imbalance_ratio, lean,
-    top_level_buy_qty, top_level_sell_qty} or None if depth data missing.
-    imbalance_ratio > 1 means more buy-side resting size (support),
-    < 1 means more sell-side resting size (resistance/absorption).
+    IMPROVED (19 Aug 2026, per Saim's question "does it use all 5
+    levels or just the top?"): now explicitly sums buy/sell quantity
+    across ALL 5 visible price levels (visible_depth_ratio) — this is
+    the immediate, actionable order-book picture, distinct from
+    totalBuyQty/totalSellQty which are the EXCHANGE'S whole-book
+    aggregate (much larger numbers, includes orders far from the
+    current price, less relevant for detecting an immediate defended
+    level). Also identifies the single HEAVIEST level on each side (the
+    "wall") — which price and how much size, since a big order sitting
+    at one specific level (not spread evenly) is exactly the "someone
+    punched 15000 at this exact price" scenario Saim described.
+
+    Returns both the whole-book aggregate ratio AND the 5-level visible
+    ratio, plus the detected wall (if any).
     """
     if not quote_payload:
         return None
 
     total_buy = quote_payload.get("totalBuyQty")
     total_sell = quote_payload.get("totalSellQty")
-    if total_buy is None or total_sell is None:
-        return None
-
-    imbalance_ratio = round(total_buy / total_sell, 3) if total_sell else None
 
     buy_book = quote_payload.get("buyBook", {})
     sell_book = quote_payload.get("sellBook", {})
-    top_buy = buy_book.get("1", {}).get("qty")
-    top_sell = sell_book.get("1", {}).get("qty")
 
-    if imbalance_ratio is None:
+    visible_buy_qty = sum((buy_book.get(str(i), {}).get("qty") or 0) for i in range(1, 6))
+    visible_sell_qty = sum((sell_book.get(str(i), {}).get("qty") or 0) for i in range(1, 6))
+    visible_depth_ratio = round(visible_buy_qty / visible_sell_qty, 3) if visible_sell_qty else None
+
+    # Find the single heaviest level on each side — the "wall"
+    buy_levels = [(buy_book.get(str(i), {}).get("price"), buy_book.get(str(i), {}).get("qty") or 0) for i in range(1, 6)]
+    sell_levels = [(sell_book.get(str(i), {}).get("price"), sell_book.get(str(i), {}).get("qty") or 0) for i in range(1, 6)]
+    heaviest_buy = max(buy_levels, key=lambda x: x[1], default=(None, 0))
+    heaviest_sell = max(sell_levels, key=lambda x: x[1], default=(None, 0))
+
+    whole_book_ratio = round(total_buy / total_sell, 3) if (total_buy is not None and total_sell) else None
+
+    if visible_depth_ratio is None:
         lean = "NEUTRAL"
-    elif imbalance_ratio > 1.15:
-        lean = "BUY_HEAVY"  # more resting buy-side size — support building
-    elif imbalance_ratio < 0.87:
-        lean = "SELL_HEAVY"  # more resting sell-side size — resistance/absorption
+    elif visible_depth_ratio > 1.15:
+        lean = "BUY_HEAVY"  # more resting buy-side size in visible depth — support building
+    elif visible_depth_ratio < 0.87:
+        lean = "SELL_HEAVY"  # more resting sell-side size in visible depth — resistance/absorption
     else:
         lean = "NEUTRAL"
 
     return {
-        "total_buy_qty": total_buy,
-        "total_sell_qty": total_sell,
-        "imbalance_ratio": imbalance_ratio,
+        "visible_buy_qty": visible_buy_qty,
+        "visible_sell_qty": visible_sell_qty,
+        "visible_depth_ratio": visible_depth_ratio,  # sum of all 5 levels each side — the one that matters most
+        "whole_book_ratio": whole_book_ratio,          # exchange-wide aggregate, broader context
         "lean": lean,
-        "top_level_buy_qty": top_buy,
-        "top_level_sell_qty": top_sell,
+        "heaviest_buy_level": {"price": heaviest_buy[0], "qty": heaviest_buy[1]},
+        "heaviest_sell_level": {"price": heaviest_sell[0], "qty": heaviest_sell[1]},
     }
 
 
@@ -86,9 +103,12 @@ def detect_absorption(oi_lean, depth_imbalance):
         "absorption_detected": absorption_detected,
         "oi_lean": oi_lean,
         "depth_lean": depth_imbalance["lean"],
-        "imbalance_ratio": depth_imbalance["imbalance_ratio"],
+        "visible_depth_ratio": depth_imbalance["visible_depth_ratio"],
+        "wall": depth_imbalance["heaviest_sell_level"] if depth_imbalance["lean"] == "SELL_HEAVY" else depth_imbalance["heaviest_buy_level"],
         "interpretation": (
-            f"OI/PCR says {oi_lean} but order-book depth shows {depth_imbalance['lean']} "
-            f"pressure — real orders may be absorbing the OI-implied direction"
+            f"OI/PCR says {oi_lean} but order-book depth (all 5 levels) shows {depth_imbalance['lean']} "
+            f"pressure — biggest wall at price {depth_imbalance['heaviest_sell_level']['price'] if depth_imbalance['lean']=='SELL_HEAVY' else depth_imbalance['heaviest_buy_level']['price']} "
+            f"(qty {depth_imbalance['heaviest_sell_level']['qty'] if depth_imbalance['lean']=='SELL_HEAVY' else depth_imbalance['heaviest_buy_level']['qty']}) "
+            f"— real orders may be absorbing the OI-implied direction there"
         ) if absorption_detected else "OI positioning and order-book depth agree",
     }
