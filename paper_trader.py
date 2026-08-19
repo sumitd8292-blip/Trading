@@ -376,3 +376,41 @@ def review_shortfall_patterns():
         "avg_shortfall_points": round(sum(e["shortfall_diagnosis"]["shortfall"] for e in shortfall_trades) / len(shortfall_trades), 2),
         "layer_breakdown": breakdown,
     }
+
+
+def validate_prediction_against_footprint(trade, footprint_summary_at_entry):
+    """
+    THE MISSING LINK Saim identified (19 Aug 2026): connects the
+    Delta+Gamma-predicted premium move (estimate_premium_move, computed
+    at entry) against what footprint_proxy's buyer/seller samples showed
+    AT THE ENTRY PRICE LEVEL — did real order-flow support the direction
+    the math predicted, or contradict it?
+
+    trade: a closed paper trade dict (must have option_snapshot and
+    entry_price)
+    footprint_summary_at_entry: get_footprint_summary() output, or the
+    specific price-bucket entry from it, at/near the trade's entry price
+
+    Returns a verdict: did footprint AGREE with the trade's direction
+    (buyer-heavy for a LONG, seller-heavy for a SHORT) or DISAGREE —
+    this is the actual "did the math match the real order-flow" check.
+    """
+    if not footprint_summary_at_entry or not trade.get("option_snapshot"):
+        return None
+
+    direction = trade["signal"]
+    net_lean = footprint_summary_at_entry.get("net_lean")
+    if not net_lean:
+        return None
+
+    footprint_agrees = (direction == "LONG" and net_lean == "BUYER") or (direction == "SHORT" and net_lean == "SELLER")
+
+    return {
+        "trade_direction": direction,
+        "footprint_net_lean": net_lean,
+        "footprint_buyer_pct": footprint_summary_at_entry.get("buyer_pct"),
+        "footprint_agreed_with_trade": footprint_agrees,
+        "trade_outcome": trade.get("outcome"),
+        "note": "Cross-checks whether real order-flow (footprint) supported the trade's direction at entry — "
+                "the missing link between Delta-based prediction and actual market microstructure.",
+    }

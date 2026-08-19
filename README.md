@@ -553,3 +553,22 @@ tally per price bucket, appends it to footprint_daily_summaries.jsonl
 footprint_samples.jsonl. `get_historical_price_level_context()` lets
 future analysis query "has this price level shown genuine buying before"
 using accumulated history across many days. Tested end-to-end.
+
+## Missing Link Fixed: Prediction vs Footprint Validation (19 Aug 2026)
+Saim's sharp observation: Delta-based premium predictions and
+footprint's buyer/seller samples were computed independently, with no
+cross-check. `validate_prediction_against_footprint()` in paper_trader.py
+closes this: given a closed trade and the footprint summary at its
+entry price, checks whether real order-flow (buyer-heavy/seller-heavy)
+actually AGREED with the trade's direction — the concrete answer to
+"did the math match real market microstructure, or was the theoretical
+prediction disconnected from what buyers/sellers were actually doing".
+Tested end-to-end.
+
+Known limitations documented honestly: (1) footprint samples the ATM
+OPTION's trade (index itself isn't directly traded), so option-specific
+dynamics add some noise to the pure underlying signal; (2) ~3-min
+sampling interval can miss very fast single-minute moves (e.g. today's
+14:35 spike); (3) this validation function exists now but isn't yet
+wired into an automatic end-of-trade report — that's the natural next
+step once enough trades accumulate to test it against.
