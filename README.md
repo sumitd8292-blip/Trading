@@ -391,3 +391,17 @@ futures contract on any week where that Tuesday wasn't also the
 monthly expiry. Fixed: VSA's futures fetch now always uses
 get_monthly_expiry() regardless of symbol, since that's the only valid
 expiry type for futures contracts.
+
+## Cooldown Added to Prevent Whipsaw Over-Trading (19 Aug 2026)
+Saim caught 51 paper trades in a single day (expected ~1.5-3/day) —
+root cause: no cooldown after a trade closed, so if the entry
+condition was still barely true on the very next 1-min tick, a new
+trade opened immediately, creating rapid open->SL->reopen churn in
+choppy conditions. This explained a suspicious pattern: many tiny wins
+(0.4-2pts, consistent with trailing SL barely triggering before
+reversing) mixed with repeated exact -15pt losses (fixed initial SL),
+and real premium P&L coming out poor/negative despite index-point P&L
+looking mildly positive — high-frequency low-edge churn gets eaten by
+real-world costs. Fixed: open_paper_trade() now enforces a 10-minute
+cooldown after the last CLOSED trade for that symbol+date before a new
+one can open. Tested: immediate re-entry attempt correctly blocked.

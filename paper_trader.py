@@ -79,11 +79,30 @@ def open_paper_trade(symbol, date_str, signal, entry_price, sl_points, target_po
     One open trade per (symbol, date) at a time — if one's already open
     for today, skip (avoids overlapping paper positions from repeated
     signal checks).
+
+    COOLDOWN (added 19 Aug 2026, Saim caught 51 trades/day — way too
+    many, caused by rapid re-entry: as soon as a trade closed, if the
+    entry condition was still barely true on the very next 1-min tick,
+    a new trade opened immediately, creating a whipsaw open->SL->reopen
+    loop in choppy conditions. This explained why index-point P&L looked
+    OK-ish but real premium P&L was consistently poor — high-frequency,
+    low-edge churn gets eaten by real-world costs even when it nets
+    slightly positive on paper). Now enforces a minimum gap after the
+    LAST CLOSED trade for this symbol+date before a new one can open.
     """
+    COOLDOWN_MINUTES = 10
+
     entries = _read_all()
     already_open = any(e["symbol"] == symbol and e["date"] == date_str and e["status"] == "OPEN" for e in entries)
     if already_open:
         return None
+
+    todays_closed = [e for e in entries if e["symbol"] == symbol and e["date"] == date_str and e["status"] == "CLOSED"]
+    if todays_closed:
+        last_closed = max(todays_closed, key=lambda e: e["exit_time"])
+        minutes_since_close = (datetime.now() - datetime.fromisoformat(last_closed["exit_time"])).total_seconds() / 60
+        if minutes_since_close < COOLDOWN_MINUTES:
+            return None
 
     initial_sl_price = entry_price - sl_points if signal == "LONG" else entry_price + sl_points
 
