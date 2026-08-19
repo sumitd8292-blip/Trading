@@ -255,22 +255,32 @@ def run_once():
         # Convert the already-fetched live option-chain rows into the
         # flat {strikePrice, optionType, delta, iv, ...} shape
         # greeks_bias.compute_greeks_bias() expects, and wire in FII/DII.
+        # FIX (19 Aug 2026): wrapped in try/except — this was unguarded
+        # and could crash the whole loop for a symbol if option-chain
+        # data was malformed/stale, silently halting signal generation.
         greeks_bias_val = None
-        chain_data_for_greeks = _latest_option_rows.get(symbol)
-        if chain_data_for_greeks:
-            rows, spot = chain_data_for_greeks
-            flat_contracts = []
-            for r in rows:
-                for side, opt_type in (("call", "CE"), ("put", "PE")):
-                    if r.get(side):
-                        flat_contracts.append({
-                            "strikePrice": r["strike"], "optionType": opt_type,
-                            "delta": r[side].get("delta"), "iv": r[side].get("iv"),
-                            "theta": r[side].get("theta"), "gamma": r[side].get("gamma"),
-                        })
-            greeks_bias_val = compute_greeks_bias(flat_contracts, spot)
+        try:
+            chain_data_for_greeks = _latest_option_rows.get(symbol)
+            if chain_data_for_greeks:
+                rows, spot = chain_data_for_greeks
+                flat_contracts = []
+                for r in rows:
+                    for side, opt_type in (("call", "CE"), ("put", "PE")):
+                        if r.get(side):
+                            flat_contracts.append({
+                                "strikePrice": r["strike"], "optionType": opt_type,
+                                "delta": r[side].get("delta"), "iv": r[side].get("iv"),
+                                "theta": r[side].get("theta"), "gamma": r[side].get("gamma"),
+                            })
+                greeks_bias_val = compute_greeks_bias(flat_contracts, spot)
+        except Exception as e:
+            print(f"[{now_ist()}] {symbol}: greeks_bias computation failed (non-fatal) — {e}")
 
-        fii_bias_val = get_latest_manual_fii_bias()
+        try:
+            fii_bias_val = get_latest_manual_fii_bias()
+        except Exception as e:
+            print(f"[{now_ist()}] {symbol}: fii_bias fetch failed (non-fatal) — {e}")
+            fii_bias_val = None
 
         result = score_setup(closes, highs, lows, oi_bias=oi_bias, vsa_bias=vsa_bias, smc_bias=s_bias,
                               greeks_bias=greeks_bias_val, fii_bias=fii_bias_val, candles_for_trend=candles)
