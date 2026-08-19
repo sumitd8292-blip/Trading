@@ -405,3 +405,30 @@ looking mildly positive — high-frequency low-edge churn gets eaten by
 real-world costs. Fixed: open_paper_trade() now enforces a 10-minute
 cooldown after the last CLOSED trade for that symbol+date before a new
 one can open. Tested: immediate re-entry attempt correctly blocked.
+
+## Replaced Blunt Cooldown With Edge-Triggered Signals + Shortfall Diagnosis (19 Aug 2026)
+Saim pushed back hard on the 10-min cooldown fix: "that's not learning,
+that's just a rule you imposed — if it hits SL once, does that mean it
+stops trying all day?" — a fair, sharp critique. Fixed properly:
+
+1. **Edge-triggered entry** (replaces cooldown): the real bug was that
+   engine.py's signal check is LEVEL-triggered (fires every tick a
+   condition remains true) instead of EDGE-triggered (should fire once,
+   when the condition freshly becomes true). continuous_runner.py now
+   tracks each symbol's previous-tick signal and only opens a new paper
+   trade when the signal actually TRANSITIONS into LONG/SHORT — a
+   continuously-true signal doesn't keep re-triggering entries. This is
+   a correction to what "a new signal" actually means, not an arbitrary
+   time-based rule.
+
+2. **Shortfall diagnosis** (the deeper learning Saim actually wanted):
+   every closed trade now compares its actual move against the
+   trending-move threshold (trail_trigger_points, 15 by default) — if
+   it fell short, logs exactly WHICH layers (OI/VSA/SMC/Greeks/FII) were
+   NOT supportive (disagree/neutral) at entry. `review_shortfall_patterns()`
+   aggregates this across all trades: for each layer, what % of its
+   non-supportive occurrences coincided with a shortfall — a real,
+   data-backed answer to "does this layer's absence predict weak moves"
+   instead of just WIN/LOSS. Tested end-to-end: correctly diagnosed a
+   1pt-actual-vs-15pt-expected trade as having VSA+OI non-supportive at
+   entry, and the pattern-review correctly aggregated it.

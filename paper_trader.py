@@ -78,31 +78,14 @@ def open_paper_trade(symbol, date_str, signal, entry_price, sl_points, target_po
 
     One open trade per (symbol, date) at a time — if one's already open
     for today, skip (avoids overlapping paper positions from repeated
-    signal checks).
-
-    COOLDOWN (added 19 Aug 2026, Saim caught 51 trades/day — way too
-    many, caused by rapid re-entry: as soon as a trade closed, if the
-    entry condition was still barely true on the very next 1-min tick,
-    a new trade opened immediately, creating a whipsaw open->SL->reopen
-    loop in choppy conditions. This explained why index-point P&L looked
-    OK-ish but real premium P&L was consistently poor — high-frequency,
-    low-edge churn gets eaten by real-world costs even when it nets
-    slightly positive on paper). Now enforces a minimum gap after the
-    LAST CLOSED trade for this symbol+date before a new one can open.
+    signal checks). Cooldown removed 19 Aug — see continuous_runner.py's
+    edge-triggered signal detection instead (a more principled fix:
+    only open on a FRESH signal transition, not an arbitrary time delay).
     """
-    COOLDOWN_MINUTES = 10
-
     entries = _read_all()
     already_open = any(e["symbol"] == symbol and e["date"] == date_str and e["status"] == "OPEN" for e in entries)
     if already_open:
         return None
-
-    todays_closed = [e for e in entries if e["symbol"] == symbol and e["date"] == date_str and e["status"] == "CLOSED"]
-    if todays_closed:
-        last_closed = max(todays_closed, key=lambda e: e["exit_time"])
-        minutes_since_close = (datetime.now() - datetime.fromisoformat(last_closed["exit_time"])).total_seconds() / 60
-        if minutes_since_close < COOLDOWN_MINUTES:
-            return None
 
     initial_sl_price = entry_price - sl_points if signal == "LONG" else entry_price + sl_points
 
@@ -192,6 +175,30 @@ def check_open_trades(symbol, latest_candles, is_eod=False):
             trade["exit_price"] = exit_price
             trade["exit_time"] = datetime.now().isoformat()
             trade["exit_reason"] = exit_reason
+
+            # POST-MORTEM DIAGNOSIS (added 19 Aug 2026, per Saim's core
+            # question: "if it moved only 1pt instead of the expected
+            # 15pt, WHY? Was volume not confirming? Was OI disagreeing?"
+            # This is the actual learning signal, not just WIN/LOSS —
+            # explicitly compares the move achieved against what a
+            # "trend-continuation-worthy" move should look like (using
+            # trail_trigger_points, 15 by default, as the bar a genuine
+            # trending move should clear) and flags which layers were
+            # NOT supportive at entry, giving a concrete, reviewable
+            # answer to "what was different about the trades that fell
+            # short" once enough of these accumulate.
+            shortfall_diagnosis = None
+            if pts < trade["trail_trigger_points"]:
+                layer_status = trade.get("layer_status") or {}
+                non_supportive = [layer for layer, status in layer_status.items() if status in ("disagree", "neutral")]
+                shortfall_diagnosis = {
+                    "expected_min_move": trade["trail_trigger_points"],
+                    "actual_move": round(pts, 2),
+                    "shortfall": round(trade["trail_trigger_points"] - pts, 2),
+                    "non_supportive_layers_at_entry": non_supportive,
+                    "note": "Move fell short of a genuine trending-move threshold — layers listed were disagree/neutral at entry, worth checking if their absence correlates with shortfalls over many trades",
+                }
+            trade["shortfall_diagnosis"] = shortfall_diagnosis
 
             # Real premium P&L estimate (Delta + Theta), addressing the
             # 17 Aug finding that index-point profit doesn't always mean
@@ -316,3 +323,56 @@ def summary():
 
 if __name__ == "__main__":
     print(json.dumps(summary(), indent=2))
+
+
+def review_shortfall_patterns():
+    """
+    Aggregates shortfall_diagnosis across all closed trades — the actual
+    answer to Saim's question "why didn't it move as much as expected,
+    and what pattern explains that". Counts how often each layer was
+    NON-supportive (disagree/neutral) specifically on trades that fell
+    short of the trending-move threshold, versus how often that same
+    layer was non-supportive overall — if a layer's absence is
+    disproportionately common in shortfall trades, that's a real,
+    data-backed signal that the layer matters more than currently
+    weighted.
+    """
+    entries = [e for e in _read_all() if e["status"] == "CLOSED"]
+    if not entries:
+        return {"total": 0, "message": "No closed trades yet."}
+
+    shortfall_trades = [e for e in entries if e.get("shortfall_diagnosis")]
+    if not shortfall_trades:
+        return {"total_closed": len(entries), "shortfall_trades": 0,
+                "message": "No trades have fallen short of the trending-move threshold yet."}
+
+    layer_shortfall_counts = defaultdict(int)
+    layer_overall_counts = defaultdict(int)
+
+    for e in entries:
+        layer_status = e.get("layer_status") or {}
+        for layer, status in layer_status.items():
+            if status in ("disagree", "neutral"):
+                layer_overall_counts[layer] += 1
+
+    for e in shortfall_trades:
+        for layer in e["shortfall_diagnosis"]["non_supportive_layers_at_entry"]:
+            layer_shortfall_counts[layer] += 1
+
+    breakdown = {}
+    for layer in layer_overall_counts:
+        overall = layer_overall_counts[layer]
+        in_shortfall = layer_shortfall_counts.get(layer, 0)
+        breakdown[layer] = {
+            "non_supportive_in_shortfall_trades": in_shortfall,
+            "non_supportive_overall": overall,
+            "pct_of_non_supportive_that_were_shortfalls": round(in_shortfall / overall * 100, 1) if overall else None,
+        }
+
+    return {
+        "total_closed": len(entries),
+        "shortfall_trades": len(shortfall_trades),
+        "shortfall_rate_pct": round(len(shortfall_trades) / len(entries) * 100, 1),
+        "avg_shortfall_points": round(sum(e["shortfall_diagnosis"]["shortfall"] for e in shortfall_trades) / len(shortfall_trades), 2),
+        "layer_breakdown": breakdown,
+    }

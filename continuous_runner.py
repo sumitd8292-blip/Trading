@@ -60,6 +60,7 @@ _latest_option_rows = {}    # symbol -> (rows, spot) — full chain, for strike 
 _latest_volume_profile = {} # symbol -> live option-volume activity dict
 _close_window_start_snapshot = {}  # symbol -> option rows captured at ~15:15, for expiry_close_tracker
 _close_window_analyzed_today = {}  # symbol -> date already analyzed (avoid re-running every loop tick)
+_last_signal_state = {}  # symbol -> previous tick's signal, for edge-triggered entry detection
 _latest_vix = None          # India VIX level, refreshed alongside option chain
 
 
@@ -348,7 +349,23 @@ def run_once():
                       f"acceleration_ratio={event['acceleration_ratio']}, biggest_strike_move={event['biggest_strike_move']}")
             _close_window_analyzed_today[symbol] = today
 
-        if result["signal"] != "NONE":
+        # Edge-triggered entry (fixed 19 Aug 2026, replacing a blunt time-
+        # cooldown after Saim's sharp pushback: "a fixed cooldown isn't
+        # learning anything, it's just a rule I imposed"). The real bug
+        # was that the signal check is LEVEL-triggered (fires every tick
+        # the condition remains true) instead of EDGE-triggered (should
+        # only fire once, when the condition freshly becomes true) — this
+        # is what caused 51 trades/day (a borderline-true condition kept
+        # re-opening trades every tick after each SL hit). Now only opens
+        # a NEW paper trade when the signal actually TRANSITIONS into
+        # LONG/SHORT from something else (NONE, or the opposite side) —
+        # a continuously-true signal from the previous tick does not
+        # re-trigger a new entry.
+        prev_signal = _last_signal_state.get(symbol, "NONE")
+        is_fresh_signal = result["signal"] != "NONE" and result["signal"] != prev_signal
+        _last_signal_state[symbol] = result["signal"]
+
+        if is_fresh_signal:
             # Tag which entry logic actually fired (reversal vs trend-continuation)
             # — per Saim's 18 Aug request to learn which wins more, and where/when
             strategy_type = "trend_continuation" if any("TREND-CONTINUATION" in r for r in result["reasons"]) else "reversal"
