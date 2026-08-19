@@ -487,3 +487,32 @@ implied direction (OI_WON) or the wall's direction (WALL_WON), or times
 out (INCONCLUSIVE). `review_absorption_stats()` reports the real
 win-rate of this behavioral-tier signal. Wired into continuous_runner.py.
 Tested end-to-end (correctly logged and resolved a simulated event).
+
+## Four New Learning Modules — 19 Aug 2026 Late-Session Discussion
+Systematic implementation of everything discussed:
+
+1. **order_size_anomaly.py** — statistical (mechanical-tier) detection of
+   order sizes that are outliers vs a rolling baseline, per Saim's "news
+   is lagging, big capital moves first" insight. Flags order-book size
+   spikes (z-score based) independent of any news explanation.
+
+2. **multi_timeframe_context.py** — computes daily + 1-hour EMA-trend
+   context so 1-min signals can be tagged as WITH or AGAINST the
+   higher-timeframe trend (e.g. NIFTY's multi-week decline since 24-Jul).
+   Refreshed once/day (higher timeframes don't need per-minute updates).
+
+3. **fvg_touch_tracker.py** — tracks what happens when price returns to
+   touch a previously-detected FVG (smc.py's find_recent_fvgs): does it
+   REJECT or CONTINUE through, and does VSA at the touch moment predict
+   which. Directly closes the loop on today's live example (NIFTY
+   touched an 18-Aug gap zone at 24228, then rejected hard to 24078).
+
+4. **session_behavior_tracker.py** — daily comparison of regular cash-
+   session price range vs the extended 15:15-15:40 options/futures
+   window, formalizing today's finding that the day's most dramatic move
+   happened specifically in that extended window (confirmed: LTP's
+   regular-session high/low of 24172.85/24025.65 vs the full including-
+   extended-session range of 24228.05/23956.85).
+
+All four wired into continuous_runner.py's main loop. Tested end-to-end
+(all 4 modules pass with realistic simulated data).

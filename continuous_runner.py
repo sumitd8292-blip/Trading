@@ -50,6 +50,11 @@ from fii_dii import get_latest_manual_fii_bias
 from order_flow_depth import compute_depth_imbalance, detect_absorption
 from absorption_tracker import log_absorption_event, check_absorption_resolution
 from groww_api import fetch_quote_depth
+from order_size_anomaly import record_snapshot, check_for_anomaly
+from multi_timeframe_context import get_multi_timeframe_context
+from fvg_touch_tracker import check_fvg_touch, check_touch_resolution
+from session_behavior_tracker import analyze_session_split
+from smc import find_recent_fvgs
 
 LOOP_INTERVAL_SECONDS = 60  # 1-minute granularity
 MARKET_OPEN = dtime(9, 12)
@@ -63,6 +68,33 @@ _latest_option_rows = {}    # symbol -> (rows, spot) — full chain, for strike 
 _latest_volume_profile = {} # symbol -> live option-volume activity dict
 _close_window_start_snapshot = {}  # symbol -> option rows captured at ~15:15, for expiry_close_tracker
 _close_window_analyzed_today = {}  # symbol -> date already analyzed (avoid re-running every loop tick)
+_mtf_context = {}  # symbol -> multi-timeframe (daily/1H) trend context, refreshed periodically
+_mtf_last_refresh_date = {}  # symbol -> date MTF context was last fetched (once/day is enough)
+_session_split_analyzed_today = {}  # symbol -> date already analyzed
+
+
+def refresh_multi_timeframe_context(symbol):
+    """
+    Fetches daily + 1-hour candles once per day (higher-timeframe data
+    doesn't need per-minute refreshing) and computes trend context — per
+    Saim's point that the agent needs to know if today's move is WITH or
+    AGAINST the multi-day trend (e.g. NIFTY's decline since 24-Jul).
+    """
+    today_str = now_ist().strftime("%Y-%m-%d")
+    if _mtf_last_refresh_date.get(symbol) == today_str:
+        return  # already fetched today
+    try:
+        daily_candles = fetch_candles(symbol, f"{(now_ist().date()).isoformat()} 00:00:00",
+                                       now_ist().strftime("%Y-%m-%d %H:%M:%S"), interval_minutes=1440)
+        hourly_candles = fetch_candles(symbol, f"{today_str} 00:00:00",
+                                        now_ist().strftime("%Y-%m-%d %H:%M:%S"), interval_minutes=60)
+        ctx = get_multi_timeframe_context(daily_candles, hourly_candles)
+        _mtf_context[symbol] = ctx
+        _mtf_last_refresh_date[symbol] = today_str
+        print(f"[{now_ist()}] {symbol}: multi-timeframe context — daily={ctx['daily'].get('trend')}, "
+              f"hourly={ctx['hourly'].get('trend')}, aligned={ctx['timeframes_aligned']}")
+    except Exception as e:
+        print(f"[{now_ist()}] {symbol}: multi-timeframe context fetch failed (non-fatal) — {e}")
 _last_signal_state = {}  # symbol -> previous tick's signal, for edge-triggered entry detection
 _latest_vix = None          # India VIX level, refreshed alongside option chain
 _latest_depth_imbalance = {}  # symbol -> order-book depth imbalance dict (real order flow, not OI)
@@ -94,6 +126,19 @@ def refresh_order_flow_depth():
             payload = fetch_quote_depth(trading_symbol, exchange="NSE", segment="FNO")
             imbalance = compute_depth_imbalance(payload)
             _latest_depth_imbalance[symbol] = imbalance
+
+            # Order-size anomaly detection (added 19 Aug 2026, per Saim's
+            # "news is lagging, big capital moves first" discussion — a
+            # mechanical baseline-vs-spike statistical read, independent
+            # of any news explanation)
+            if imbalance:
+                record_snapshot(symbol, imbalance["visible_buy_qty"], imbalance["visible_sell_qty"], now_ist().isoformat())
+                anomaly = check_for_anomaly(symbol, imbalance["visible_buy_qty"], imbalance["visible_sell_qty"],
+                                             now_ist().isoformat(), spot)
+                if anomaly:
+                    print(f"[{now_ist()}] {symbol}: 🚨 ORDER-SIZE ANOMALY — {anomaly['dominant_side']}-side, "
+                          f"z-score={anomaly['z_score']} (current={anomaly['current_total_qty']}, "
+                          f"baseline_mean={anomaly['baseline_mean']})")
 
             oi_bias = _latest_live_oi_bias.get(symbol)
             if imbalance and oi_bias:
@@ -294,6 +339,32 @@ def run_once():
             vsa_bias = momentum_bias(candles)
 
         s_bias = get_smc_bias(candles)
+
+        # Multi-timeframe context refresh (once/day) + FVG-touch tracking
+        refresh_multi_timeframe_context(symbol)
+        try:
+            fvgs = find_recent_fvgs(candles, lookback_bars=100)  # wider lookback for full-day FVG history
+            touch_event = check_fvg_touch(symbol, today, candles, fvgs, vsa_bias, now_ist().isoformat())
+            if touch_event:
+                print(f"[{now_ist()}] {symbol}: FVG TOUCHED — {touch_event['fvg_type']} gap "
+                      f"[{touch_event['gap_low']:.1f}-{touch_event['gap_high']:.1f}], VSA={touch_event['vsa_at_touch']}")
+            fvg_closed = check_touch_resolution(symbol, closes[-1], now_ist().isoformat(),
+                                                 is_eod=(now_ist().time() >= MARKET_CLOSE))
+            for fc in fvg_closed:
+                print(f"[{now_ist()}] {symbol}: FVG TOUCH RESOLVED — {fc['outcome']}, {fc['move_points']:+.1f}pts")
+        except Exception as e:
+            print(f"[{now_ist()}] {symbol}: FVG touch tracking failed (non-fatal) — {e}")
+
+        # Session-split analysis (once/day, after market close)
+        if now_ist().time() >= MARKET_CLOSE and _session_split_analyzed_today.get(symbol) != today:
+            try:
+                split = analyze_session_split(symbol, today, candles)
+                if split:
+                    print(f"[{now_ist()}] {symbol}: SESSION SPLIT — regular_range={split['regular_range']}, "
+                          f"extended_range={split['extended_range']} ({split['extended_share_of_total_range_pct']}% of total)")
+            except Exception as e:
+                print(f"[{now_ist()}] {symbol}: session split analysis failed (non-fatal) — {e}")
+            _session_split_analyzed_today[symbol] = today
 
         # FIX (19 Aug 2026, Saim caught this): greeks_bias and fii_bias
         # were NEVER passed to score_setup() here — engine.py correctly
