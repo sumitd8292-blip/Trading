@@ -383,6 +383,17 @@ def run_once():
                 print(f"[{now_ist()}] {symbol}: session split analysis failed (non-fatal) — {e}")
             _session_split_analyzed_today[symbol] = today
 
+            # Footprint compress-and-cleanup (per Saim's 19 Aug agreement:
+            # keep the compressed per-price-level summary PERMANENTLY —
+            # it's what explains WHY a level is support/resistance — but
+            # clean up the raw minute-by-minute samples daily, since
+            # they're not needed once compressed)
+            try:
+                from footprint_proxy import compress_and_cleanup_day
+                compress_and_cleanup_day(symbol, today)
+            except Exception as e:
+                print(f"[{now_ist()}] {symbol}: footprint compress/cleanup failed (non-fatal) — {e}")
+
         # FIX (19 Aug 2026, Saim caught this): greeks_bias and fii_bias
         # were NEVER passed to score_setup() here — engine.py correctly
         # reported "NOT YET INTEGRATED" for both even though live Gamma/

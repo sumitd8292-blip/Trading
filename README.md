@@ -540,3 +540,16 @@ This is a coarser approximation than true footprint (samples every ~3
 min, not every tick) but requires zero new infrastructure — reuses data
 already being fetched. True WebSocket-based tick footprint remains a
 possible future upgrade if this proxy proves useful but insufficient.
+
+## Footprint Compress-and-Cleanup (19 Aug 2026, same-day follow-up)
+Per Saim's explicit agreement: raw minute-by-minute footprint samples
+get cleaned up daily, but the COMPRESSED per-price-level summary (which
+answers "why is there support here — genuine buyer activity, or forced
+seller defense?") is kept PERMANENTLY. `compress_and_cleanup_day()` runs
+once per symbol at end-of-day (wired into continuous_runner.py alongside
+the session-split analysis): computes the day's final buyer/seller
+tally per price bucket, appends it to footprint_daily_summaries.jsonl
+(permanent), then removes that day's raw samples from
+footprint_samples.jsonl. `get_historical_price_level_context()` lets
+future analysis query "has this price level shown genuine buying before"
+using accumulated history across many days. Tested end-to-end.

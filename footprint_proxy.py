@@ -126,3 +126,64 @@ def check_trend_footprint_shift(footprint_summary, direction):
                           "buyer support still present as price falls (buyer % not consistently decreasing)"
 
     return {"buyer_pct_sequence": buyer_pcts, "interpretation": interpretation}
+
+
+FOOTPRINT_SUMMARY_PATH = os.path.join(BASE, "memory", "footprint_daily_summaries.jsonl")
+
+
+def compress_and_cleanup_day(symbol, date_str, price_bucket_size=10):
+    """
+    Called once at end-of-day: computes the final per-price-bucket
+    buyer/seller summary for the day (via get_footprint_summary), saves
+    it PERMANENTLY to footprint_daily_summaries.jsonl (this is what
+    answers "why is there support/resistance here — genuine buyer
+    activity or forced seller objection" for as long as we keep it),
+    then removes today's RAW samples from footprint_samples.jsonl (the
+    minute-by-minute detail isn't needed once compressed — per Saim's
+    19 Aug agreement: keep the compressed summary permanently, clean up
+    raw samples daily).
+    """
+    summary = get_footprint_summary(symbol, date_str, price_bucket_size)
+    if not summary:
+        return None
+
+    record = {
+        "symbol": symbol, "date": date_str,
+        "price_bucket_summary": summary,
+        "compressed_at": datetime.now().isoformat(),
+    }
+    with open(FOOTPRINT_SUMMARY_PATH, "a") as f:
+        f.write(json.dumps(record) + "\n")
+
+    # Remove today's raw samples for this symbol (keep other days/symbols intact)
+    if os.path.exists(FOOTPRINT_LOG_PATH):
+        with open(FOOTPRINT_LOG_PATH) as f:
+            remaining = [json.loads(l) for l in f if l.strip()]
+        remaining = [e for e in remaining if not (e["symbol"] == symbol and e["date"] == date_str)]
+        with open(FOOTPRINT_LOG_PATH, "w") as f:
+            for e in remaining:
+                f.write(json.dumps(e) + "\n")
+
+    return record
+
+
+def get_historical_price_level_context(symbol, price_level, tolerance=15):
+    """
+    Looks up PERMANENT compressed summaries for any past day where this
+    price level was sampled — answers "has this level shown genuine
+    buyer activity before, or just forced seller defense" using
+    accumulated history, not just today's data.
+    """
+    if not os.path.exists(FOOTPRINT_SUMMARY_PATH):
+        return []
+    with open(FOOTPRINT_SUMMARY_PATH) as f:
+        records = [json.loads(l) for l in f if l.strip()]
+
+    matches = []
+    for r in records:
+        if r["symbol"] != symbol:
+            continue
+        for bucket_price, data in r["price_bucket_summary"].items():
+            if abs(float(bucket_price) - price_level) <= tolerance:
+                matches.append({"date": r["date"], "price_bucket": bucket_price, **data})
+    return matches
