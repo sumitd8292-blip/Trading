@@ -182,3 +182,43 @@ def fetch_option_chain(underlying, expiry_date, exchange="NSE"):
         raise RuntimeError(f"Groww option-chain returned non-success: {data}")
 
     return data.get("payload")
+
+
+def fetch_quote_depth(trading_symbol, exchange="NSE", segment="FNO"):
+    """
+    Fetches the full live quote INCLUDING market depth (5-level buy/sell
+    order book) for one instrument — real order-flow data, distinct from
+    OI (which is a positioning snapshot, not real-time order punching).
+
+    Added 19 Aug 2026 per Saim's request: OI/PCR can look bullish while
+    price keeps failing to move up because large SELL orders are being
+    punched and absorbing buy pressure at a specific level — this needs
+    actual bid/ask depth to detect, not OI.
+
+    Returns the raw payload dict (buyBook/sellBook with 5 price levels
+    each, totalBuyQty/totalSellQty, OI, volume, etc.) or raises
+    RuntimeError on failure.
+    """
+    if not GROWW_API_KEY:
+        raise RuntimeError("GROWW_API_KEY not set (expected in environment / GitHub secret).")
+
+    url = f"{GROWW_API_BASE}/live-data/quote?exchange={exchange}&segment={segment}&trading_symbol={trading_symbol}"
+
+    req = urllib.request.Request(url, headers={
+        "Accept": "application/json",
+        "Authorization": f"Bearer {GROWW_API_KEY}",
+        "X-API-VERSION": "1.0",
+    })
+
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode())
+    except urllib.error.HTTPError as e:
+        raise RuntimeError(f"Groww quote-depth HTTP error {e.code}: {e.read().decode()[:500]}")
+    except Exception as e:
+        raise RuntimeError(f"Groww quote-depth request failed: {e}")
+
+    if data.get("status") != "SUCCESS":
+        raise RuntimeError(f"Groww quote-depth returned non-success: {data}")
+
+    return data.get("payload")

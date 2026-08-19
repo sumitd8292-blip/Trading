@@ -432,3 +432,23 @@ stops trying all day?" — a fair, sharp critique. Fixed properly:
    instead of just WIN/LOSS. Tested end-to-end: correctly diagnosed a
    1pt-actual-vs-15pt-expected trade as having VSA+OI non-supportive at
    entry, and the pattern-review correctly aggregated it.
+
+## Real Order-Flow / Depth Imbalance Tracking (added 19 Aug 2026)
+Direct response to Saim's point: OI/PCR is a POSITIONING snapshot, not
+real-time ORDER FLOW. His exact scenario — OI shows bullish, price
+tries to rally, but heavy sell orders get punched at a level and absorb
+the buying, so price stalls despite "bullish" positioning data.
+
+`order_flow_depth.py` reads live 5-level bid/ask market depth
+(`groww_api.fetch_quote_depth()`, endpoint `/v1/live-data/quote`) for
+the ATM strike and computes a buy/sell quantity imbalance ratio.
+`detect_absorption()` specifically flags when OI/PCR sentiment
+DISAGREES with what the order book shows right now (e.g. OI bullish
+but sell-side depth is heavier) — exactly Saim's described pattern.
+
+Wired into continuous_runner.py's refresh cycle (every ~5 min alongside
+option chain/VIX). Tested with real depth data fetched live today.
+This is intentionally a SEPARATE signal from divergence_tracker.py
+(which compares OI vs REALIZED price movement) — this compares OI vs
+the actual order book in real time, a genuinely different microstructure
+read.

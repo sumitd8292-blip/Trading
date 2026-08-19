@@ -47,6 +47,8 @@ from divergence_tracker import detect_and_log_divergence, check_divergence_resol
 from expiry_close_tracker import analyze_close_window, PRE_CLOSE_WINDOW_START
 from greeks_bias import compute_greeks_bias
 from fii_dii import get_latest_manual_fii_bias
+from order_flow_depth import compute_depth_imbalance, detect_absorption
+from groww_api import fetch_quote_depth
 
 LOOP_INTERVAL_SECONDS = 60  # 1-minute granularity
 MARKET_OPEN = dtime(9, 12)
@@ -62,6 +64,47 @@ _close_window_start_snapshot = {}  # symbol -> option rows captured at ~15:15, f
 _close_window_analyzed_today = {}  # symbol -> date already analyzed (avoid re-running every loop tick)
 _last_signal_state = {}  # symbol -> previous tick's signal, for edge-triggered entry detection
 _latest_vix = None          # India VIX level, refreshed alongside option chain
+_latest_depth_imbalance = {}  # symbol -> order-book depth imbalance dict (real order flow, not OI)
+
+
+def refresh_order_flow_depth():
+    """
+    Fetches live market depth (5-level bid/ask order book) for the ATM
+    strike of each symbol — real order-flow data (who's punching orders
+    right now), distinct from OI (positioning snapshot). Per Saim's 19
+    Aug request: detects when OI/PCR sentiment disagrees with what the
+    actual order book shows (e.g. OI bullish but heavy sell-side depth
+    absorbing buy pressure).
+    """
+    for symbol in SYMBOLS:
+        try:
+            chain_data = _latest_option_rows.get(symbol)
+            if not chain_data:
+                continue
+            rows, spot = chain_data
+            atm_row = min(rows, key=lambda r: abs(r["strike"] - spot))
+            if not atm_row.get("call"):
+                continue
+            symbol_for_depth = symbol  # ATM CALL depth as a representative proxy
+            expiry = _EXPIRY_CALCULATORS.get(symbol, get_next_tuesday_expiry)()
+            expiry_fmt = datetime.strptime(expiry, "%Y-%m-%d").strftime("%d %b").upper()
+            trading_symbol = f"{symbol}{atm_row['strike']:.0f}{expiry_fmt}CE".replace(" ", "")
+
+            payload = fetch_quote_depth(trading_symbol, exchange="NSE", segment="FNO")
+            imbalance = compute_depth_imbalance(payload)
+            _latest_depth_imbalance[symbol] = imbalance
+
+            oi_bias = _latest_live_oi_bias.get(symbol)
+            if imbalance and oi_bias:
+                absorption = detect_absorption(oi_bias.get("lean"), imbalance)
+                if absorption and absorption["absorption_detected"]:
+                    print(f"[{now_ist()}] {symbol}: ⚠️ ABSORPTION DETECTED — {absorption['interpretation']} "
+                          f"(imbalance_ratio={absorption['imbalance_ratio']})")
+                elif imbalance["lean"] != "NEUTRAL":
+                    print(f"[{now_ist()}] {symbol}: depth imbalance={imbalance['lean']} "
+                          f"(ratio={imbalance['imbalance_ratio']}), OI={oi_bias.get('lean')} — agree")
+        except Exception as e:
+            print(f"[{now_ist()}] {symbol}: order-flow depth fetch failed (non-fatal) — {e}")
 
 
 def refresh_vix():
@@ -195,6 +238,7 @@ def run_once():
     if _option_chain_loop_counter % OPTION_CHAIN_REFRESH_LOOPS == 0:
         refresh_live_option_chain()
         refresh_vix()
+        refresh_order_flow_depth()
     _option_chain_loop_counter += 1
 
     for symbol in SYMBOLS:
