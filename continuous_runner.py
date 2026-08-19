@@ -69,7 +69,8 @@ def refresh_vix():
     global _latest_vix
     try:
         today_str = now_ist().strftime("%Y-%m-%d")
-        candles = fetch_candles("INDIAVIX", f"{today_str} 09:15:00",
+        vix_start = min(dtime(9, 15), now_ist().time())
+        candles = fetch_candles("INDIAVIX", f"{today_str} {vix_start.strftime('%H:%M:%S')}",
                                  now_ist().strftime("%Y-%m-%d %H:%M:%S"),
                                  interval_minutes=5)
         if candles:
@@ -195,7 +196,8 @@ def run_once():
 
     for symbol in SYMBOLS:
         try:
-            candles = fetch_candles(symbol, f"{today} 09:15:00",
+            fetch_start = min(dtime(9, 15), now_ist().time())
+            candles = fetch_candles(symbol, f"{today} {fetch_start.strftime('%H:%M:%S')}",
                                      now_ist().strftime("%Y-%m-%d %H:%M:%S"),
                                      interval_minutes=1)
         except Exception as e:
@@ -224,7 +226,8 @@ def run_once():
         try:
             futures_expiry_raw = _EXPIRY_CALCULATORS.get(symbol, get_next_tuesday_expiry)()
             futures_expiry_fmt = datetime.strptime(futures_expiry_raw, "%Y-%m-%d").strftime("%d%b%y")
-            futures_candles = fetch_candles(symbol, f"{today} 09:15:00",
+            fut_start = min(dtime(9, 15), now_ist().time())
+            futures_candles = fetch_candles(symbol, f"{today} {fut_start.strftime('%H:%M:%S')}",
                                              now_ist().strftime("%Y-%m-%d %H:%M:%S"),
                                              segment="FNO", interval_minutes=1, expiry=futures_expiry_fmt)
             vsa_bias = momentum_bias(futures_candles) if futures_candles else momentum_bias(candles)
