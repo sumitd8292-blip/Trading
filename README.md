@@ -584,3 +584,19 @@ failure/blocked-by-already-open logging after, and full try/except with
 traceback around the whole block. This won't fix an underlying bug by
 itself, but will make the exact failure point visible in tomorrow's logs
 instead of failing silently.
+
+## Two Bugs Fixed (20 Aug 2026 morning) — from live log review
+1. **multi_timeframe_context "unsupported interval" error**: was calling
+   fetch_candles with interval_minutes=1440 (daily) — groww_api.py only
+   supports {1,5,15,30,60}. Also both fetches were only requesting
+   TODAY's data, which can never satisfy the 20-period EMA trend calc
+   (needs 20+ historical candles). Fixed: fetch 60-min candles over the
+   last 30 days, resample into daily candles ourselves (same technique
+   as earlier 5-min->15-min resampling), use the 60-min series directly
+   for hourly trend.
+2. **order_flow_depth "failed non-fatal" on every call**: trading_symbol
+   was built in a wrong format ("18 AUG"-style day-month-name) instead
+   of Groww's actual format ("NIFTY2681824300CE" — YY+single-char-month
+   +DD+strike+CE/PE). Added `_build_option_trading_symbol()`, verified
+   it exactly matches a real growwContractId confirmed earlier this
+   project (NIFTY2681824300CE for 2026-08-18 expiry, 24300 strike).

@@ -76,20 +76,49 @@ _session_split_analyzed_today = {}  # symbol -> date already analyzed
 
 def refresh_multi_timeframe_context(symbol):
     """
-    Fetches daily + 1-hour candles once per day (higher-timeframe data
-    doesn't need per-minute refreshing) and computes trend context — per
-    Saim's point that the agent needs to know if today's move is WITH or
-    AGAINST the multi-day trend (e.g. NIFTY's decline since 24-Jul).
+    Fetches enough 60-min candle history once per day (higher-timeframe
+    data doesn't need per-minute refreshing) and computes trend context —
+    per Saim's point that the agent needs to know if today's move is
+    WITH or AGAINST the multi-day trend (e.g. NIFTY's decline since
+    24-Jul).
+
+    FIX (20 Aug 2026): groww_api.fetch_candles only supports
+    interval_minutes in {1,5,15,30,60} — 1440 (daily) is NOT supported
+    and raised "Unsupported interval_minutes: 1440" every single loop
+    tick. Also, both fetches were only requesting TODAY's data, which
+    can never satisfy compute_timeframe_trend()'s default 20-period EMA
+    (needs 20+ candles of HISTORY, not just today). Fixed: fetch 60-min
+    candles over the last ~30 days, resample into daily candles
+    ourselves (same technique used earlier for 5-min->15-min), and use
+    a recent multi-day slice of the same 60-min series directly for the
+    hourly trend.
     """
     today_str = now_ist().strftime("%Y-%m-%d")
     if _mtf_last_refresh_date.get(symbol) == today_str:
         return  # already fetched today
     try:
-        daily_candles = fetch_candles(symbol, f"{(now_ist().date()).isoformat()} 00:00:00",
-                                       now_ist().strftime("%Y-%m-%d %H:%M:%S"), interval_minutes=1440)
-        hourly_candles = fetch_candles(symbol, f"{today_str} 00:00:00",
-                                        now_ist().strftime("%Y-%m-%d %H:%M:%S"), interval_minutes=60)
-        ctx = get_multi_timeframe_context(daily_candles, hourly_candles)
+        from datetime import timedelta
+        start_date = (now_ist().date() - timedelta(days=30)).isoformat()
+        hourly_raw = fetch_candles(symbol, f"{start_date} 00:00:00",
+                                    now_ist().strftime("%Y-%m-%d %H:%M:%S"), interval_minutes=60)
+        if not hourly_raw:
+            print(f"[{now_ist()}] {symbol}: multi-timeframe context — no hourly data returned")
+            return
+
+        # Resample 60-min candles into daily candles ourselves (API has no native daily interval)
+        by_day = {}
+        for c in hourly_raw:
+            day = c["timestamp"][:10]
+            by_day.setdefault(day, []).append(c)
+        daily_candles = []
+        for day, rows in sorted(by_day.items()):
+            daily_candles.append({
+                "timestamp": rows[0]["timestamp"],
+                "open": rows[0]["open"], "close": rows[-1]["close"],
+                "high": max(r["high"] for r in rows), "low": min(r["low"] for r in rows),
+            })
+
+        ctx = get_multi_timeframe_context(daily_candles, hourly_raw)
         _mtf_context[symbol] = ctx
         _mtf_last_refresh_date[symbol] = today_str
         print(f"[{now_ist()}] {symbol}: multi-timeframe context — daily={ctx['daily'].get('trend')}, "
@@ -99,6 +128,26 @@ def refresh_multi_timeframe_context(symbol):
 _last_signal_state = {}  # symbol -> previous tick's signal, for edge-triggered entry detection
 _latest_vix = None          # India VIX level, refreshed alongside option chain
 _latest_depth_imbalance = {}  # symbol -> order-book depth imbalance dict (real order flow, not OI)
+
+
+def _build_option_trading_symbol(symbol, strike, expiry_date_str, option_type="CE"):
+    """
+    Builds Groww's trading_symbol format for options, e.g. "NIFTY2681824300CE"
+    for NIFTY, expiry 2026-08-18, strike 24300, CE — confirmed against a
+    real growwContractId seen earlier this project. Format:
+    SYMBOL + YY + M(single char: 1-9 for Jan-Sep, O/N/D for Oct/Nov/Dec) + DD + STRIKE + CE/PE
+
+    FIX (20 Aug 2026): refresh_order_flow_depth() was building this as a
+    "18 AUG"-style day-month-name string, which is NOT Groww's actual
+    symbol format — every order-flow-depth fetch was failing because of
+    this wrong symbol string, not a real API/data availability issue.
+    """
+    dt = datetime.strptime(expiry_date_str, "%Y-%m-%d")
+    yy = dt.strftime("%y")
+    month_char = {1: "1", 2: "2", 3: "3", 4: "4", 5: "5", 6: "6", 7: "7", 8: "8", 9: "9",
+                  10: "O", 11: "N", 12: "D"}[dt.month]
+    dd = dt.strftime("%d")
+    return f"{symbol}{yy}{month_char}{dd}{strike:.0f}{option_type}"
 
 
 def refresh_order_flow_depth():
@@ -119,10 +168,8 @@ def refresh_order_flow_depth():
             atm_row = min(rows, key=lambda r: abs(r["strike"] - spot))
             if not atm_row.get("call"):
                 continue
-            symbol_for_depth = symbol  # ATM CALL depth as a representative proxy
             expiry = _EXPIRY_CALCULATORS.get(symbol, get_next_tuesday_expiry)()
-            expiry_fmt = datetime.strptime(expiry, "%Y-%m-%d").strftime("%d %b").upper()
-            trading_symbol = f"{symbol}{atm_row['strike']:.0f}{expiry_fmt}CE".replace(" ", "")
+            trading_symbol = _build_option_trading_symbol(symbol, atm_row["strike"], expiry, "CE")
 
             payload = fetch_quote_depth(trading_symbol, exchange="NSE", segment="FNO")
             imbalance = compute_depth_imbalance(payload)
