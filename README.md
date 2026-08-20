@@ -669,3 +669,10 @@ clarification or live experimentation (e.g. Postman/curl) rather than
 further blind guessing in a future session. Diagnostic logging (exact
 trading_symbol + full URL) left in place in fetch_quote_depth() for
 whenever this is revisited.
+
+## Multi-Timeframe Context Re-Enabled With Diagnostic Logging (20 Aug 2026)
+Re-enabled and added explicit logging of the exact start_time/end_time/
+interval being sent to fetch_candles(), so the next HTTP 400 failure
+will show both the exact request parameters AND Groww's error message
+together in the logs — needed to actually diagnose this instead of
+guessing further.

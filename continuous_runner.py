@@ -89,8 +89,10 @@ def refresh_multi_timeframe_context(symbol):
     try:
         from datetime import timedelta
         start_date = (now_ist().date() - timedelta(days=5)).isoformat()
-        hourly_raw = fetch_candles(symbol, f"{start_date} 09:15:00",
-                                    now_ist().strftime("%Y-%m-%d %H:%M:%S"), interval_minutes=60)
+        end_str = now_ist().strftime("%Y-%m-%d %H:%M:%S")
+        start_str = f"{start_date} 09:15:00"
+        print(f"[{now_ist()}] {symbol}: multi-timeframe fetching candles, start='{start_str}' end='{end_str}' interval=60")
+        hourly_raw = fetch_candles(symbol, start_str, end_str, interval_minutes=60)
         if not hourly_raw:
             print(f"[{now_ist()}] {symbol}: multi-timeframe context — no hourly data returned")
             return
@@ -406,12 +408,10 @@ def run_once():
 
         s_bias = get_smc_bias(candles)
 
-        # Multi-timeframe context refresh — TEMPORARILY DISABLED (20 Aug
-        # 2026): still getting HTTP 400 after the 00:00:00->09:15:00 date
-        # fix, root cause not yet found. Not core to signal generation
-        # (paper trades are working fine without it) — disabling to stop
-        # log noise until properly debugged with more diagnostic info.
-        # refresh_multi_timeframe_context(symbol)
+        # Multi-timeframe context refresh — RE-ENABLED with diagnostic
+        # logging (20 Aug 2026) to capture the exact params + error
+        # message and finally diagnose the persistent HTTP 400.
+        refresh_multi_timeframe_context(symbol)
         try:
             fvgs = find_recent_fvgs(candles, lookback_bars=100)  # wider lookback for full-day FVG history
             touch_event = check_fvg_touch(symbol, today, candles, fvgs, vsa_bias, now_ist().isoformat())
