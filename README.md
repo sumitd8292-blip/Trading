@@ -676,3 +676,13 @@ interval being sent to fetch_candles(), so the next HTTP 400 failure
 will show both the exact request parameters AND Groww's error message
 together in the logs — needed to actually diagnose this instead of
 guessing further.
+
+## ROOT-CAUSE FOUND AND FIXED: Multi-Timeframe 60-min Interval (20 Aug 2026)
+Confirmed via live error message: Groww's historical-candles endpoint
+rejects interval_minutes=60 outright ("Not able to recognize
+candle_interval, having value 60minute") — only 1/5/15/30-min are
+supported, contrary to what groww_api.py's _INTERVAL_MAP assumed.
+Switched multi_timeframe_context to use 30-min candles instead (still
+gives genuinely useful higher-timeframe trend context, just slightly
+finer granularity than originally planned). This should now work
+reliably since it uses a confirmed-valid interval.

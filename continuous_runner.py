@@ -91,8 +91,13 @@ def refresh_multi_timeframe_context(symbol):
         start_date = (now_ist().date() - timedelta(days=5)).isoformat()
         end_str = now_ist().strftime("%Y-%m-%d %H:%M:%S")
         start_str = f"{start_date} 09:15:00"
-        print(f"[{now_ist()}] {symbol}: multi-timeframe fetching candles, start='{start_str}' end='{end_str}' interval=60")
-        hourly_raw = fetch_candles(symbol, start_str, end_str, interval_minutes=60)
+        print(f"[{now_ist()}] {symbol}: multi-timeframe fetching candles, start='{start_str}' end='{end_str}' interval=30")
+        # FIX (20 Aug 2026): Groww's API rejected interval=60 with "Not
+        # able to recognize candle_interval, having value 60minute" —
+        # confirmed via live error message that 60-min isn't supported by
+        # this endpoint (only 1/5/15/30 are). Switched to 30-min, still
+        # gives genuinely useful higher-timeframe trend context.
+        hourly_raw = fetch_candles(symbol, start_str, end_str, interval_minutes=30)
         if not hourly_raw:
             print(f"[{now_ist()}] {symbol}: multi-timeframe context — no hourly data returned")
             return
