@@ -46,24 +46,16 @@ def compute_timeframe_trend(candles, ema_period=20):
     }
 
 
-def get_multi_timeframe_context(daily_candles, hourly_candles):
+def get_multi_timeframe_context(hourly_candles):
     """
-    Combines daily + 1-hour trend reads into one context dict. This is
-    meant to be logged alongside every 1-min signal (via paper_trader's
-    layer_status-style tagging) — NOT used to block/allow trades, just
-    to give post-hoc analysis the ability to ask "did signals aligned
-    with the higher-timeframe trend perform better than counter-trend
-    signals" once enough data accumulates.
+    Simplified 20 Aug 2026 per Saim's instruction: DAILY trend removed
+    entirely (was causing rate-limit issues by fetching 30 days of
+    hourly data to resample into daily, on top of all the other frequent
+    calls the agent already makes) — only the 1-HOUR trend is computed
+    now. This alone answers Saim's core question ("is it forming
+    higher-highs/higher-lows or not") without the daily-resample
+    overhead. Daily context can be reconsidered later as a lighter,
+    less-frequent addition if genuinely needed.
     """
-    daily_ctx = compute_timeframe_trend(daily_candles, ema_period=20)
     hourly_ctx = compute_timeframe_trend(hourly_candles, ema_period=20)
-
-    aligned = None
-    if daily_ctx.get("trend") in ("UP", "DOWN") and hourly_ctx.get("trend") in ("UP", "DOWN"):
-        aligned = daily_ctx["trend"] == hourly_ctx["trend"]
-
-    return {
-        "daily": daily_ctx,
-        "hourly": hourly_ctx,
-        "timeframes_aligned": aligned,
-    }
+    return {"hourly": hourly_ctx}

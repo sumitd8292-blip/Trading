@@ -76,53 +76,29 @@ _session_split_analyzed_today = {}  # symbol -> date already analyzed
 
 def refresh_multi_timeframe_context(symbol):
     """
-    Fetches enough 60-min candle history once per day (higher-timeframe
-    data doesn't need per-minute refreshing) and computes trend context —
-    per Saim's point that the agent needs to know if today's move is
-    WITH or AGAINST the multi-day trend (e.g. NIFTY's decline since
-    24-Jul).
-
-    FIX (20 Aug 2026): groww_api.fetch_candles only supports
-    interval_minutes in {1,5,15,30,60} — 1440 (daily) is NOT supported
-    and raised "Unsupported interval_minutes: 1440" every single loop
-    tick. Also, both fetches were only requesting TODAY's data, which
-    can never satisfy compute_timeframe_trend()'s default 20-period EMA
-    (needs 20+ candles of HISTORY, not just today). Fixed: fetch 60-min
-    candles over the last ~30 days, resample into daily candles
-    ourselves (same technique used earlier for 5-min->15-min), and use
-    a recent multi-day slice of the same 60-min series directly for the
-    hourly trend.
+    Fetches recent 60-min candle history once per day and computes just
+    the 1-HOUR trend context — per Saim's 20 Aug simplification: daily
+    trend removed entirely (was causing rate-limit issues fetching 30
+    days of hourly data on top of all the other frequent calls). Only
+    fetches ~5 days of hourly candles now (plenty for a 20-period EMA,
+    much lighter than the previous 30-day daily-resample approach).
     """
     today_str = now_ist().strftime("%Y-%m-%d")
     if _mtf_last_refresh_date.get(symbol) == today_str:
         return  # already fetched today
     try:
         from datetime import timedelta
-        start_date = (now_ist().date() - timedelta(days=30)).isoformat()
+        start_date = (now_ist().date() - timedelta(days=5)).isoformat()
         hourly_raw = fetch_candles(symbol, f"{start_date} 00:00:00",
                                     now_ist().strftime("%Y-%m-%d %H:%M:%S"), interval_minutes=60)
         if not hourly_raw:
             print(f"[{now_ist()}] {symbol}: multi-timeframe context — no hourly data returned")
             return
 
-        # Resample 60-min candles into daily candles ourselves (API has no native daily interval)
-        by_day = {}
-        for c in hourly_raw:
-            day = c["timestamp"][:10]
-            by_day.setdefault(day, []).append(c)
-        daily_candles = []
-        for day, rows in sorted(by_day.items()):
-            daily_candles.append({
-                "timestamp": rows[0]["timestamp"],
-                "open": rows[0]["open"], "close": rows[-1]["close"],
-                "high": max(r["high"] for r in rows), "low": min(r["low"] for r in rows),
-            })
-
-        ctx = get_multi_timeframe_context(daily_candles, hourly_raw)
+        ctx = get_multi_timeframe_context(hourly_raw)
         _mtf_context[symbol] = ctx
         _mtf_last_refresh_date[symbol] = today_str
-        print(f"[{now_ist()}] {symbol}: multi-timeframe context — daily={ctx['daily'].get('trend')}, "
-              f"hourly={ctx['hourly'].get('trend')}, aligned={ctx['timeframes_aligned']}")
+        print(f"[{now_ist()}] {symbol}: multi-timeframe context — hourly={ctx['hourly'].get('trend')}")
     except Exception as e:
         print(f"[{now_ist()}] {symbol}: multi-timeframe context fetch failed (non-fatal) — {e}")
 _last_signal_state = {}  # symbol -> previous tick's signal, for edge-triggered entry detection
@@ -172,6 +148,7 @@ def refresh_order_flow_depth():
             trading_symbol = _build_option_trading_symbol(symbol, atm_row["strike"], expiry, "CE")
 
             payload = fetch_quote_depth(trading_symbol, exchange="NSE", segment="FNO")
+            time.sleep(0.5)  # stagger — same rate-limit reasoning as option-chain fetch
             imbalance = compute_depth_imbalance(payload)
             _latest_depth_imbalance[symbol] = imbalance
 
@@ -306,7 +283,9 @@ def refresh_live_option_chain():
         except Exception as e:
             print(f"[{now_ist()}] {symbol}: option chain fetch failed for {expiry} — {e}")
             continue
-
+        time.sleep(0.5)  # stagger calls (20 Aug 2026: multiple back-to-back Groww
+                          # API calls in the same tick were likely triggering 429
+                          # rate-limit errors — small delay between each call)
         oi_iv = compute_oi_and_iv_bias(rows, spot)
         pcr = oi_iv["pcr"]
         lean = "BEARISH" if pcr > 1.1 else ("BULLISH" if pcr < 0.9 else "NEUTRAL")
@@ -367,6 +346,7 @@ def run_once():
             continue
 
         append_intraday_candles(symbol, candles, interval_label="1min")
+        time.sleep(0.5)  # stagger before the next call for this symbol (rate-limit mitigation)
 
         closes = [c["close"] for c in candles]
         highs = [c["high"] for c in candles]

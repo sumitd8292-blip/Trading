@@ -600,3 +600,20 @@ instead of failing silently.
    +DD+strike+CE/PE). Added `_build_option_trading_symbol()`, verified
    it exactly matches a real growwContractId confirmed earlier this
    project (NIFTY2681824300CE for 2026-08-18 expiry, 24300 strike).
+
+## Multi-Timeframe Simplified to Hourly-Only + Rate-Limit Mitigation (20 Aug 2026)
+Per Saim's instruction: daily trend context removed entirely from
+multi_timeframe_context.py (was requiring a heavy 30-day hourly-candle
+fetch to resample into daily, contributing to rate-limit pressure) —
+now ONLY computes the 1-hour trend (fetches just 5 days of hourly
+candles, plenty for a 20-period EMA). This alone answers "is it forming
+higher-highs/higher-lows or not" without the daily overhead.
+
+Also addressed HTTP 429 rate-limit errors seen in live logs: added
+0.5s stagger delays between Groww API calls that were firing
+back-to-back in the same loop tick (up to 8 calls could cluster
+together every 3rd minute — option chain + depth for both symbols,
+plus the regular per-minute candle + futures fetches). Added time.sleep(0.5)
+between option-chain fetches per symbol, between order-flow-depth
+fetches per symbol, and between the main candle fetch and futures fetch
+within each symbol's loop iteration.
