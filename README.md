@@ -803,3 +803,25 @@ continuous_runner.py.
 NOT YET TESTABLE: Saim doesn't have a Dhan account/API credentials yet.
 Once he signs up and generates DHAN_CLIENT_ID + DHAN_ACCESS_TOKEN, this
 is ready to test immediately.
+
+## Dhan 20-Level Depth Feed via Official FullDepth Class (20 Aug 2026)
+Per Saim's request to get as close to DEXT's native low-latency data as
+possible (fewer hops than the MCP-connector path used in this chat).
+dhan_depth_feed.py uses the OFFICIAL dhanhq Python library's FullDepth
+WebSocket class (confirmed endpoints: wss://depth-api-feed.dhan.co/twentydepth
+for 20-level, wss://full-depth-api.dhan.co/twohundreddepth for 200-level)
+rather than hand-rolling binary packet parsing — much lower guessing-risk
+than the Groww WebSocket situation, since Dhan's library handles this
+natively and is actively documented/maintained.
+
+Install: pip install dhanhq --break-system-packages
+Run: python3 dhan_depth_feed.py (tests NIFTY 24200 CE, security_id 61647)
+
+NOTE: exact callback-attachment method name (on_update) and exchange_segment
+code (used "2" for NSE_FNO) are best-effort based on docs — includes a
+fallback that prints FullDepth's actual available methods if the
+assumed API doesn't match, so any mismatch is immediately diagnosable
+rather than producing an opaque error like we hit with Groww.
+
+Isolated from continuous_runner.py — same safe pattern as all other
+diagnostic tools.
