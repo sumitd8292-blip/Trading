@@ -1,33 +1,50 @@
-Subject: FNO Live Market Depth API — Consistent 400 GA001 "Bad Request" for Valid Contracts
+Subject: FNO Market Depth — Both REST and WebSocket Feed fail (GA001 / NATS connection error)
 
 Hi Groww API Support Team,
 
-I have an active Trading API subscription and am building a personal algo-trading tool using your REST API. I'm getting a consistent error when trying to fetch live market depth (order book) for FNO options, even though the same contracts work fine via your Option Chain API.
+I have an active Trading API subscription and am building a personal algo-trading tool. I've been unable to get live market depth (order book) for FNO options working via EITHER of your two documented methods, despite extensive troubleshooting. Details below — happy to share full logs if useful.
 
-ISSUE:
-GET /v1/live-data/quote and GET /v1/live-data/ltp both return HTTP 400 with the same error for FNO option contracts:
-
+======================
+METHOD 1: REST /v1/live-data/quote and /v1/live-data/ltp
+======================
+Both consistently return:
 {"status":"FAILURE","error":{"code":"GA001","message":"Bad Request. Please check your request parameters","metadata":null}}
 
-WHAT I'VE VERIFIED:
-1. The trading_symbol I'm using ("NIFTY26AUG24200CE" for NIFTY, strike 24200, expiry 2026-08-25) is confirmed correct — it matches:
-   - The "trading_symbol" field directly returned by your own Option Chain API (GET /v1/option-chain/exchange/NSE/underlying/NIFTY) for this exact strike
-   - The format shown in your Instruments CSV documentation examples
-2. The Option Chain API call itself works perfectly for this same contract — I can see LTP, OI, Greeks, volume, etc.
-3. I tried both endpoints with identical results:
-   - GET /v1/live-data/quote?exchange=NSE&segment=FNO&trading_symbol=NIFTY26AUG24200CE
-   - GET /v1/live-data/ltp?segment=FNO&exchange_symbols=NSE_NIFTY26AUG24200CE
-4. I also tried the CASH segment on the plain index symbol as a sanity check.
+Tried with:
+- trading_symbol="NIFTY26AUG24200CE" (confirmed correct — matches BOTH the "trading_symbol" field in your own Option Chain API response for this exact contract, AND the format in your Instruments CSV documentation)
+- Same symbol via /v1/live-data/ltp with exchange_symbols=["NSE_NIFTY26AUG24200CE"]
+- exchange_token="61647" (looked up directly from your official instruments CSV at growwapi-assets.groww.in/instruments/instrument.csv) tried as the trading_symbol parameter value
+
+All fail identically. The Option Chain API (GET /v1/option-chain/exchange/NSE/underlying/NIFTY) works perfectly for the exact same contract — LTP, OI, Greeks, volume all return correctly.
+
+======================
+METHOD 2: WebSocket Feed (growwapi Python SDK, GrowwFeed class)
+======================
+Using the official growwapi Python package:
+
+from growwapi import GrowwFeed, GrowwAPI
+groww = GrowwAPI(api_key)
+feed = GrowwFeed(groww)
+feed.subscribe_market_depth([{"exchange": "NSE", "segment": "FNO", "exchange_token": "61647"}], on_data_received=callback)
+
+Observed sequence:
+1. GrowwAPI init succeeds ("Ready to Groww!")
+2. Socket token creation succeeds: POST /v1/api/apex/v1/socket/token/create returns 200
+3. NATS connection attempt to wss://socket-api.groww.in begins
+4. subscribe_market_depth() then logs repeated generic "Error:" (growwapi.groww.nats_client logger) with no further detail, even with DEBUG-level logging enabled — the underlying exception appears to stringify to empty
+
+I used exchange_token="61647" (NIFTY, 25-Aug-2026 expiry, 24200 strike CE) — confirmed correct via your own instruments CSV, and via GrowwMCP's own successful depth-fetch for this exact token (which DOES return full 5-level bid/ask data when called through the MCP layer — so the token and contract are valid, live, and have depth data available).
 
 QUESTIONS:
-1. Is there a separate permission/subscription requirement specifically for FNO Level-2 market depth (distinct from Option Chain/Greeks access), that might not be enabled on my account?
-2. Is there a specific format difference for trading_symbol between the Option Chain API and the Live Data (quote/ltp) APIs that I might be missing?
-3. Could you please check server-side what's actually failing validation for this specific request?
+1. Is there a separate account-level permission/enablement needed specifically for Level-2 market depth (distinct from Option Chain/Greeks/candle access), that might not be active on my account?
+2. For the WebSocket Feed — is there a way to get more detailed error output from the NATS connection/auth step? The library only logs a generic "Error:" with no exception detail.
+3. Could you check server-side logs for socket-api.groww.in around [DATE/TIME OF YOUR TEST] for my account to see what's actually failing the NATS handshake/subscription?
 
 My account email: [YOUR GROWW ACCOUNT EMAIL HERE]
-API Key (last 4 chars only, for reference): [LAST 4 CHARS]
+API Key (last 4 chars only): [LAST 4 CHARS]
+Test exchange_token used: 61647 (NIFTY 25-Aug-2026 24200 CE)
 
-Thank you for your help!
+Thank you for your help — happy to hop on a call or share more logs if useful.
 
 Regards,
 Saim
