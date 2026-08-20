@@ -686,3 +686,14 @@ Switched multi_timeframe_context to use 30-min candles instead (still
 gives genuinely useful higher-timeframe trend context, just slightly
 finer granularity than originally planned). This should now work
 reliably since it uses a confirmed-valid interval.
+
+## Order-Flow-Depth ATTEMPT 4: Numeric-Month Format (20 Aug 2026)
+Per Saim's go-ahead after research (found orderflowwithsg.com as a
+conceptual reference, and Groww's own Feed docs showing a real
+executed-order "contractId": "NIFTY2522025400CE" — numeric month
+format). Re-enabled refresh_order_flow_depth() using
+_build_option_trading_symbol() (numeric-month, e.g. built
+"NIFTY2682524300CE" for NIFTY/25Aug/24300/CE) instead of the
+option-chain's own alpha-month "trading_symbol" field (which failed
+GA001). This is a genuinely different, well-evidenced format from the
+previous two failed attempts — testing live next market session.

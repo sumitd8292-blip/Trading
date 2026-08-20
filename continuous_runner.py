@@ -156,10 +156,18 @@ def refresh_order_flow_depth():
                 continue
             rows, spot = chain_data
             atm_row = min(rows, key=lambda r: abs(r["strike"] - spot))
-            if not atm_row.get("call") or not atm_row["call"].get("trading_symbol"):
+            if not atm_row.get("call"):
                 continue
-            trading_symbol = atm_row["call"]["trading_symbol"]
-            print(f"[{now_ist()}] {symbol}: order-flow-depth using trading_symbol='{trading_symbol}'")
+            # ATTEMPT 4 (20 Aug 2026, per Saim's go-ahead): try the
+            # contractId-style NUMERIC-MONTH format instead — confirmed
+            # live in a real Groww order-execution response
+            # ("NIFTY2522025400CE"), a genuinely different scheme from
+            # both the day-month-name guess and the option-chain's own
+            # "trading_symbol" field (alpha-month) — both already failed
+            # with GA001 "Invalid trading symbol".
+            expiry = _EXPIRY_CALCULATORS.get(symbol, get_next_tuesday_expiry)()
+            trading_symbol = _build_option_trading_symbol(symbol, atm_row["strike"], expiry, "CE")
+            print(f"[{now_ist()}] {symbol}: order-flow-depth ATTEMPT 4 (numeric-month) trading_symbol='{trading_symbol}'")
 
             payload = fetch_quote_depth(trading_symbol, exchange="NSE", segment="FNO")
             time.sleep(0.5)  # stagger — same rate-limit reasoning as option-chain fetch
@@ -344,20 +352,13 @@ def run_once():
         refresh_vix()
         # RE-ENABLED (20 Aug 2026): fixed by using the trading_symbol
         # already present in the option-chain response instead of
-        # guessing it — see refresh_order_flow_depth()'s docstring.
-        # RE-DISABLED (20 Aug 2026, same session): even with the CONFIRMED
-        # correct trading_symbol from Groww's own option-chain response
-        # (verified live: "NIFTY26AUG24200CE", "BANKNIFTY26AUG57600CE" —
-        # exactly matching Groww's documented format), the live-data/quote
-        # endpoint STILL rejects with 400 GA001 "bad request". This rules
-        # out symbol-format guessing as the cause — something else is
-        # wrong with this endpoint/call (possibly segment=FNO isn't valid
-        # for this specific endpoint despite docs suggesting it should be,
-        # or a genuinely different required param). Needs either Groww
-        # support clarification or live experimentation (e.g. via
-        # Postman/curl with a human watching responses), not further
-        # blind guessing. Disabling to keep the trading day stable.
-        # refresh_order_flow_depth()
+        # RE-ENABLED (20 Aug 2026), trying ATTEMPT 4 — numeric-month
+        # contractId-style format, confirmed against a real Groww order
+        # response ("NIFTY2522025400CE"). Both previous formats (guessed
+        # day-month-name, and option-chain's own "trading_symbol" field
+        # with alpha-month) failed with GA001. This is genuinely
+        # different — testing per Saim's go-ahead.
+        refresh_order_flow_depth()
     _option_chain_loop_counter += 1
 
     for symbol in SYMBOLS:
