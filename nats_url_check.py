@@ -23,7 +23,7 @@ async def _patched_connect(*args, **kwargs):
         print("NATS connect() SUCCEEDED")
         return result
     except Exception as e:
-        print(f"NATS connect() RAISED: {type(e).__name__}: {e}")
+        print(f"NATS connect() RAISED: {type(e).__name__}: {e!r}")
         raise
 
 nats.connect = _patched_connect
@@ -59,3 +59,12 @@ try:
     feed.subscribe_market_depth(instruments_list, on_data_received=on_data)
 except Exception as e:
     print(f"subscribe_market_depth raised: {type(e).__name__}: {e}")
+
+
+# ADDITIONAL PATCH: intercept the error_cb itself, since growwapi's
+# nats_client.py logs "Error: %s" with an exception object that
+# stringifies to empty — print repr/type/args instead to see what's
+# actually inside it.
+import growwapi.groww.nats_client as ncm
+_orig_class = ncm.GrowwFeedNatsClient if hasattr(ncm, "GrowwFeedNatsClient") else None
+print("nats_client module attrs:", [a for a in dir(ncm) if not a.startswith("_")])
