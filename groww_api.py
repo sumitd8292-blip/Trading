@@ -203,6 +203,7 @@ def fetch_quote_depth(trading_symbol, exchange="NSE", segment="FNO"):
         raise RuntimeError("GROWW_API_KEY not set (expected in environment / GitHub secret).")
 
     url = f"{GROWW_API_BASE}/live-data/quote?exchange={exchange}&segment={segment}&trading_symbol={trading_symbol}"
+    print(f"DEBUG fetch_quote_depth URL: {url}")
 
     req = urllib.request.Request(url, headers={
         "Accept": "application/json",

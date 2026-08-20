@@ -152,6 +152,7 @@ def refresh_order_flow_depth():
             if not atm_row.get("call") or not atm_row["call"].get("trading_symbol"):
                 continue
             trading_symbol = atm_row["call"]["trading_symbol"]
+            print(f"[{now_ist()}] {symbol}: order-flow-depth using trading_symbol='{trading_symbol}'")
 
             payload = fetch_quote_depth(trading_symbol, exchange="NSE", segment="FNO")
             time.sleep(0.5)  # stagger — same rate-limit reasoning as option-chain fetch
