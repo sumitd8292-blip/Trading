@@ -370,7 +370,18 @@ def run_once():
         # day-month-name, and option-chain's own "trading_symbol" field
         # with alpha-month) failed with GA001. This is genuinely
         # different — testing per Saim's go-ahead.
-        refresh_order_flow_depth()
+        # RE-DISABLED (20 Aug 2026): 4 different symbol formats tried
+        # (day-month-name guess, option-chain's own alpha-month
+        # trading_symbol, numeric-month matching Groww's own docs
+        # example) — ALL rejected with identical GA001 across BOTH
+        # /v1/live-data/quote AND /v1/live-data/ltp endpoints (confirmed
+        # via diagnostic isolation test). This proves it's not an
+        # endpoint-specific issue and not a format-guessing issue — the
+        # symbol itself is being rejected consistently. Needs direct
+        # Groww support contact with concrete failing examples, not more
+        # guessing. Core system (candles, option chain, VSA, multi-
+        # timeframe, paper trading) confirmed healthy and unaffected.
+        # refresh_order_flow_depth()
     _option_chain_loop_counter += 1
 
     for symbol in SYMBOLS:

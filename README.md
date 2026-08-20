@@ -707,3 +707,31 @@ array with "NSE_" prefix) for the SAME symbol, to isolate whether this
 is specific to the quote/depth endpoint or the symbol itself is invalid
 everywhere. Non-blocking — runs alongside the existing quote_depth
 attempt, doesn't change core flow.
+
+## Order-Flow-Depth Paused, Escalation Summary for Groww Support (20 Aug 2026)
+Tried 4 different, well-evidenced trading_symbol formats — all rejected
+with identical GA001 "Bad Request" across BOTH /v1/live-data/quote and
+/v1/live-data/ltp endpoints (confirmed via isolation test using two
+structurally different API calls for the SAME symbol). This proves the
+issue isn't endpoint-specific or a simple format guess — something more
+fundamental is wrong, needing direct Groww support contact.
+
+SUPPORT REQUEST SUMMARY (for Saim to send to Groww):
+- Endpoint tried: GET /v1/live-data/quote?exchange=NSE&segment=FNO&trading_symbol=BANKNIFTY2682557500CE
+- Also tried: GET /v1/live-data/ltp?segment=FNO&exchange_symbols=NSE_BANKNIFTY2682557500CE
+- Both return: {"status":"FAILURE","error":{"code":"GA001","message":"Bad Request. Please check your request parameters","metadata":null}}
+- Symbol was derived from a live BANKNIFTY option chain response
+  (strike 57500, expiry 2026-08-25) that itself worked successfully via
+  GET /v1/option-chain/exchange/NSE/underlying/BANKNIFTY
+- Formats tried for trading_symbol: "BANKNIFTY2682557500CE" (numeric
+  month, matching Groww's own docs example "NIFTY25N1823400CE"),
+  "BANKNIFTY26AUG57500CE" (alpha month, matching Instruments CSV docs
+  example "BANKNIFTY25DEC27000PE") — both rejected identically
+- Question for Groww support: what is the exact expected trading_symbol
+  format for /v1/live-data/quote and /v1/live-data/ltp for FNO options,
+  and why does a symbol/strike confirmed live in the option-chain
+  response get rejected by these endpoints?
+
+Core system (candles, option chain, VSA, multi-timeframe, paper trading,
+signals, Telegram alerts) confirmed healthy and unaffected — this
+remains a standalone "bonus feature" pause, not a system-wide issue.
