@@ -134,6 +134,13 @@ def refresh_order_flow_depth():
     Aug request: detects when OI/PCR sentiment disagrees with what the
     actual order book shows (e.g. OI bullish but heavy sell-side depth
     absorbing buy pressure).
+
+    FIX (20 Aug 2026): was manually GUESSING trading_symbol format across
+    multiple attempts (all wrong — Groww's docs show conflicting formats
+    in different places). Found the REAL fix: Groww's option-chain
+    response (which we already fetch successfully every ~3 min) includes
+    the exact correct trading_symbol per contract directly — no guessing
+    needed. Uses that confirmed value instead.
     """
     for symbol in SYMBOLS:
         try:
@@ -142,10 +149,9 @@ def refresh_order_flow_depth():
                 continue
             rows, spot = chain_data
             atm_row = min(rows, key=lambda r: abs(r["strike"] - spot))
-            if not atm_row.get("call"):
+            if not atm_row.get("call") or not atm_row["call"].get("trading_symbol"):
                 continue
-            expiry = _EXPIRY_CALCULATORS.get(symbol, get_next_tuesday_expiry)()
-            trading_symbol = _build_option_trading_symbol(symbol, atm_row["strike"], expiry, "CE")
+            trading_symbol = atm_row["call"]["trading_symbol"]
 
             payload = fetch_quote_depth(trading_symbol, exchange="NSE", segment="FNO")
             time.sleep(0.5)  # stagger — same rate-limit reasoning as option-chain fetch
@@ -328,16 +334,10 @@ def run_once():
     if _option_chain_loop_counter % OPTION_CHAIN_REFRESH_LOOPS == 0:
         refresh_live_option_chain()
         refresh_vix()
-        # TEMPORARILY DISABLED (20 Aug 2026): trading_symbol construction
-        # for options keeps getting Groww's exact format wrong (found TWO
-        # different symbol schemes in Groww's own docs — growwContractId
-        # uses numeric month/day encoding, but the Instruments API's
-        # trading_symbol uses alphabetic month names and appears to omit
-        # the day-of-month for monthly contracts) — guessing further risks
-        # more silent failures and log noise. Needs a proper fix using
-        # Groww's actual instruments-lookup API instead of manual string
-        # construction. Re-enable once that's built.
-        # refresh_order_flow_depth()
+        # RE-ENABLED (20 Aug 2026): fixed by using the trading_symbol
+        # already present in the option-chain response instead of
+        # guessing it — see refresh_order_flow_depth()'s docstring.
+        refresh_order_flow_depth()
     _option_chain_loop_counter += 1
 
     for symbol in SYMBOLS:

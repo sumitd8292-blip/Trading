@@ -63,6 +63,12 @@ def parse_option_chain(payload):
                 "theta": g.get("theta"), "vega": g.get("vega"), "iv": g.get("iv"),
                 "ltp": side.get("ltp"), "oi": side.get("open_interest"),
                 "volume": side.get("volume"),
+                "trading_symbol": side.get("trading_symbol"),  # FIX (20 Aug 2026):
+                # Groww's option-chain response already includes the exact
+                # correct trading_symbol per contract — was sitting unused
+                # this whole time while order_flow_depth.py tried to GUESS
+                # this string (and kept getting the format wrong across
+                # multiple attempts). Use this confirmed value instead.
             }
 
         rows.append({

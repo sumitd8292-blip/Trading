@@ -644,3 +644,14 @@ disabled this too rather than keep guessing blindly. Needs proper
 debugging with explicit parameter logging in a future session — core
 system (candles, option chain, VSA, signals, paper trading, FVG
 tracking) is confirmed clean and working.
+
+## ROOT-CAUSE FIX: Order-Flow-Depth Re-Enabled (20 Aug 2026)
+Found the real fix after two failed guessing attempts: Groww's
+option-chain response (which we ALREADY fetch successfully every ~3
+min) includes the exact correct `trading_symbol` per contract directly
+— it was sitting unused in the raw payload the whole time.
+parse_option_chain() now extracts it, and refresh_order_flow_depth()
+uses that confirmed value instead of trying to construct/guess the
+symbol string. Re-enabled (was temporarily disabled after repeated
+format-guessing failures). This is now expected to work reliably since
+it uses Groww's own returned value, not a reconstruction.
