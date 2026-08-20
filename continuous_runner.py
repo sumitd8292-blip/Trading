@@ -635,6 +635,20 @@ def run_once():
             print(f"[{now_ist()}] {symbol}: no signal ({len(candles)} candles)")
             continue
 
+        # FIX (20 Aug 2026): alert-dedup was keyed on symbol+date+signal+SCORE
+        # — meaning every minor score fluctuation (e.g. 4->5->4) during a
+        # SUSTAINED signal sent a NEW Telegram alert, even though
+        # paper-trading correctly recognized it as the same trade
+        # (direction-only check). This is exactly why Saim saw many
+        # Telegram alerts but only 2-3 paper trades — the two systems
+        # were using different definitions of "new signal". Now aligned:
+        # alerts also key on direction only (is_fresh_signal), matching
+        # paper-trading's edge-triggered logic — one alert per genuine
+        # signal transition, not per score wobble.
+        if not is_fresh_signal:
+            print(f"[{now_ist()}] {symbol}: signal continues from previous tick (score may have changed), not re-alerting")
+            continue
+
         key = _alert_key(symbol, today, result["signal"], result["score"])
         if key in alerted:
             print(f"[{now_ist()}] {symbol}: signal already alerted today, skipping")

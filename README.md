@@ -837,3 +837,15 @@ correct API (confirmed exchange segment codes too: NSE=1, NSE_FNO=2):
   internally, and run_forever() is the correct sync wrapper matching
   that loop's naming convention)
 dhan_depth_feed.py fixed accordingly — ready to re-test.
+
+## CRITICAL FIX: Alert-Spam Bug Found and Fixed (20 Aug 2026)
+Root cause of Saim's confusion ("many Telegram alerts but only 2-3 paper
+trades opened") found: alert-dedup was keyed on symbol+date+signal+SCORE,
+so every minor score fluctuation during a SUSTAINED signal (e.g. 4->5->4)
+sent a NEW Telegram alert, even though paper_trader correctly recognized
+it as the same ongoing trade (direction-only check, is_fresh_signal).
+The two systems were using genuinely different definitions of "new
+signal" — this was a real bug, not the agent being inconsistent/dumb.
+Fixed: alerts now also gate on is_fresh_signal (direction transition
+only), matching paper-trading's logic exactly — one alert per genuine
+signal, not per score wobble.
