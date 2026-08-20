@@ -35,37 +35,34 @@ def get_dhan_context():
     return DhanContext(client_id, access_token)
 
 
-def stream_depth(instruments, depth_level=20, duration_seconds=15):
+def stream_depth(instruments, depth_level=20, duration_seconds=30):
     """
     instruments: list of (exchange_segment_code, security_id) tuples.
     Exchange segment codes confirmed live (20 Aug): NSE=1, NSE_FNO=2.
     depth_level: 20 or 200.
-    duration_seconds: how long to listen before stopping.
+    duration_seconds: how long to listen before stopping (increased to
+    30s — first test with 15s got 0 packets despite successful
+    subscription, may just need more time, or market may be closed).
 
     FIXED (20 Aug 2026) based on live introspection of the real
     FullDepth object: the correct callback attribute is `on_ticks`
     (not on_update/on_data/etc — those don't exist), and the correct
     blocking entry point is `run_forever()` (not `connect()`, which is
-    an async coroutine that raised "was never awaited" when called
-    directly — FullDepth manages its own internal asyncio event loop,
-    and run_forever() is the synchronous wrapper matching that loop's
-    own naming convention).
-
-    Returns a list of received depth snapshots.
+    an async coroutine).
     """
     from dhanhq import FullDepth
 
     ctx = get_dhan_context()
-
-    print(f"Connecting to Dhan {depth_level}-level depth feed for {instruments}...")
-    depth_client = FullDepth(ctx, instruments, depth_level)
-
     received = []
 
     def on_data(data):
         received.append(data)
         print(f"Depth packet received: {data}")
 
+    print(f"Connecting to Dhan {depth_level}-level depth feed for {instruments}...")
+    depth_client = FullDepth(ctx, instruments, depth_level)
+    # Set callback immediately after construction, before starting the loop —
+    # in case the internal loop reads on_ticks only once at startup
     depth_client.on_ticks = on_data
 
     def run():
@@ -76,7 +73,15 @@ def stream_depth(instruments, depth_level=20, duration_seconds=15):
 
     t = threading.Thread(target=run, daemon=True)
     t.start()
-    time.sleep(duration_seconds)
+
+    for i in range(duration_seconds):
+        time.sleep(1)
+        if received:
+            print(f"First packet arrived after {i+1}s")
+            break
+        # re-set the callback each second in case FullDepth's internal
+        # loop checks for it repeatedly rather than caching a reference
+        depth_client.on_ticks = on_data
 
     return received
 
