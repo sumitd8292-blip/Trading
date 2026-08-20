@@ -393,8 +393,12 @@ def run_once():
 
         s_bias = get_smc_bias(candles)
 
-        # Multi-timeframe context refresh (once/day) + FVG-touch tracking
-        refresh_multi_timeframe_context(symbol)
+        # Multi-timeframe context refresh — TEMPORARILY DISABLED (20 Aug
+        # 2026): still getting HTTP 400 after the 00:00:00->09:15:00 date
+        # fix, root cause not yet found. Not core to signal generation
+        # (paper trades are working fine without it) — disabling to stop
+        # log noise until properly debugged with more diagnostic info.
+        # refresh_multi_timeframe_context(symbol)
         try:
             fvgs = find_recent_fvgs(candles, lookback_bars=100)  # wider lookback for full-day FVG history
             touch_event = check_fvg_touch(symbol, today, candles, fvgs, vsa_bias, now_ist().isoformat())

@@ -633,3 +633,14 @@ Also fixed multi_timeframe_context's date range: was using "00:00:00"
 as the day-start boundary (outside actual market hours), changed to
 "09:15:00" matching the pattern proven to work everywhere else in the
 codebase.
+
+## Multi-Timeframe Context Also Temporarily Disabled (20 Aug 2026)
+The 00:00:00->09:15:00 date-range fix didn't resolve the HTTP 400 GA001
+error — still failing on both NIFTY and BANKNIFTY. Since paper trades
+ARE now opening correctly (yesterday's zero-trades bug is confirmed
+fixed — first successful "PAPER TRADE OPEN — strategy=trend_continuation"
+seen live today) and multi-timeframe isn't core to signal generation,
+disabled this too rather than keep guessing blindly. Needs proper
+debugging with explicit parameter logging in a future session — core
+system (candles, option chain, VSA, signals, paper trading, FVG
+tracking) is confirmed clean and working.
