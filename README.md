@@ -781,3 +781,25 @@ endpoint we've been struggling with):
 All three remain isolated from the live trading system per Saim's
 architectural decision — only a CONFIRMED working approach gets ported
 back into continuous_runner.py's refresh_order_flow_depth().
+
+## Dhan API Base Built — Isolated, Ready to Test (20 Aug 2026)
+Per Saim's decision: build a Dhan (DhanHQ) integration core NOW, while
+Groww continues powering live trading UNTOUCHED. If Dhan's order-flow/
+market-depth access proves more reliable, Saim can switch and cancel
+Groww's ₹499+GST/month subscription.
+
+dhan_api.py: authentication (access-token + client-id headers), 
+fetch_quote_with_depth() (REST snapshot of live quote + FULL market
+depth + option chain + Greeks in ONE call — notably simpler than
+Groww's split REST/WebSocket approach that's been stuck), 
+fetch_option_chain(), fetch_expiry_list(), fetch_historical_data(),
+download_instrument_list() (authoritative security_id lookup, same
+pattern as Groww's exchange_token — avoids guessing).
+
+dhan_diagnostic_test.py: standalone test script, same safe isolated
+pattern as order_flow_diagnostic_agent.py — completely separate from
+continuous_runner.py.
+
+NOT YET TESTABLE: Saim doesn't have a Dhan account/API credentials yet.
+Once he signs up and generates DHAN_CLIENT_ID + DHAN_ACCESS_TOKEN, this
+is ready to test immediately.
