@@ -89,7 +89,7 @@ def refresh_multi_timeframe_context(symbol):
     try:
         from datetime import timedelta
         start_date = (now_ist().date() - timedelta(days=5)).isoformat()
-        hourly_raw = fetch_candles(symbol, f"{start_date} 00:00:00",
+        hourly_raw = fetch_candles(symbol, f"{start_date} 09:15:00",
                                     now_ist().strftime("%Y-%m-%d %H:%M:%S"), interval_minutes=60)
         if not hourly_raw:
             print(f"[{now_ist()}] {symbol}: multi-timeframe context — no hourly data returned")
@@ -328,7 +328,16 @@ def run_once():
     if _option_chain_loop_counter % OPTION_CHAIN_REFRESH_LOOPS == 0:
         refresh_live_option_chain()
         refresh_vix()
-        refresh_order_flow_depth()
+        # TEMPORARILY DISABLED (20 Aug 2026): trading_symbol construction
+        # for options keeps getting Groww's exact format wrong (found TWO
+        # different symbol schemes in Groww's own docs — growwContractId
+        # uses numeric month/day encoding, but the Instruments API's
+        # trading_symbol uses alphabetic month names and appears to omit
+        # the day-of-month for monthly contracts) — guessing further risks
+        # more silent failures and log noise. Needs a proper fix using
+        # Groww's actual instruments-lookup API instead of manual string
+        # construction. Re-enable once that's built.
+        # refresh_order_flow_depth()
     _option_chain_loop_counter += 1
 
     for symbol in SYMBOLS:

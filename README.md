@@ -617,3 +617,19 @@ plus the regular per-minute candle + futures fetches). Added time.sleep(0.5)
 between option-chain fetches per symbol, between order-flow-depth
 fetches per symbol, and between the main candle fetch and futures fetch
 within each symbol's loop iteration.
+
+## Order-Flow-Depth Temporarily Disabled + Multi-Timeframe Date-Fix (20 Aug 2026)
+Found Groww uses TWO different, incompatible option-symbol formats
+across its own docs — growwContractId (numeric month/day encoding,
+e.g. "NIFTY2681824300CE") vs Instruments API's trading_symbol
+(alphabetic month name, appears to omit day-of-month for monthly
+contracts, e.g. "BANKNIFTY25DEC27000PE"). refresh_order_flow_depth()
+(and the footprint sampling that depends on it) kept getting 400 GA001
+errors from guessing the wrong format. TEMPORARILY DISABLED rather than
+keep guessing — needs a proper fix via Groww's actual instruments-
+lookup API instead of manual string construction, in a future session.
+
+Also fixed multi_timeframe_context's date range: was using "00:00:00"
+as the day-start boundary (outside actual market hours), changed to
+"09:15:00" matching the pattern proven to work everywhere else in the
+codebase.
