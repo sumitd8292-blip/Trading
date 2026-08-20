@@ -14,6 +14,9 @@ anytime without touching continuous_runner.py.
 """
 import sys
 import os
+import logging
+
+logging.basicConfig(level=logging.DEBUG, format='%(levelname)s:%(name)s:%(message)s')
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
