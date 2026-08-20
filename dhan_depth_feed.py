@@ -49,30 +49,52 @@ def stream_depth(instruments, depth_level=20, duration_seconds=15):
     from dhanhq import FullDepth
 
     ctx = get_dhan_context()
-    received = []
 
     print(f"Connecting to Dhan {depth_level}-level depth feed for {instruments}...")
     depth_client = FullDepth(ctx, instruments, depth_level)
+
+    # ALWAYS introspect first (20 Aug fix — don't guess the callback
+    # attribute name, look at what's actually there)
+    all_attrs = [m for m in dir(depth_client) if not m.startswith("_")]
+    print("FullDepth object's available attributes/methods:", all_attrs)
+
+    import inspect
+    for attr in all_attrs:
+        try:
+            val = getattr(depth_client, attr)
+            if callable(val):
+                try:
+                    sig = inspect.signature(val)
+                    print(f"  {attr}{sig}")
+                except (ValueError, TypeError):
+                    print(f"  {attr}(...)")
+            else:
+                print(f"  {attr} = {val!r}")
+        except Exception as e:
+            print(f"  {attr}: <error introspecting: {e}>")
+
+    received = []
 
     def on_data(data):
         received.append(data)
         print(f"Depth packet received: {data}")
 
-    # The exact callback-attachment pattern may differ slightly by
-    # dhanhq version — this follows the same on_update pattern used by
-    # their OrderUpdate class (confirmed in docs); adjust if FullDepth's
-    # actual API differs once tested live.
-    if hasattr(depth_client, "on_update"):
-        depth_client.on_update = on_data
+    # Try every plausible callback-attribute name, attach to whichever exists
+    for candidate in ["on_update", "on_data", "on_message", "callback", "on_depth_update", "on_data_received"]:
+        if hasattr(depth_client, candidate):
+            print(f"Found callback attribute: {candidate} — attaching handler")
+            setattr(depth_client, candidate, on_data)
 
     def run():
-        try:
-            if hasattr(depth_client, "connect_to_dhan_websocket_sync"):
-                depth_client.connect_to_dhan_websocket_sync()
-            else:
-                print("FullDepth object methods:", [m for m in dir(depth_client) if not m.startswith("_")])
-        except Exception as e:
-            print(f"FullDepth connection error: {type(e).__name__}: {e}")
+        for connect_method in ["connect_to_dhan_websocket_sync", "connect", "run", "start", "subscribe"]:
+            if hasattr(depth_client, connect_method):
+                print(f"Calling {connect_method}()...")
+                try:
+                    getattr(depth_client, connect_method)()
+                except Exception as e:
+                    print(f"{connect_method}() raised: {type(e).__name__}: {e}")
+                return
+        print("No recognized connect/run method found on FullDepth object.")
 
     t = threading.Thread(target=run, daemon=True)
     t.start()
