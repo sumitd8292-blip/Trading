@@ -825,3 +825,15 @@ rather than producing an opaque error like we hit with Groww.
 
 Isolated from continuous_runner.py — same safe pattern as all other
 diagnostic tools.
+
+## FIXED: Dhan 20-Level Depth Feed Now Uses Correct API (20 Aug 2026)
+Live introspection of the real FullDepth object revealed the exact
+correct API (confirmed exchange segment codes too: NSE=1, NSE_FNO=2):
+- Callback attribute: `on_ticks` (not on_update — that attribute doesn't
+  exist on FullDepth)
+- Blocking entry point: `run_forever()` (not `connect()` — that's an
+  internal async coroutine; calling it directly raised "coroutine was
+  never awaited" since FullDepth manages its own asyncio event loop
+  internally, and run_forever() is the correct sync wrapper matching
+  that loop's naming convention)
+dhan_depth_feed.py fixed accordingly — ready to re-test.
