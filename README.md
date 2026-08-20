@@ -655,3 +655,17 @@ uses that confirmed value instead of trying to construct/guess the
 symbol string. Re-enabled (was temporarily disabled after repeated
 format-guessing failures). This is now expected to work reliably since
 it uses Groww's own returned value, not a reconstruction.
+
+## Order-Flow-Depth Re-Disabled — Root Cause Still Unknown (20 Aug 2026)
+Confirmed live: using Groww's OWN trading_symbol from the option-chain
+response ("NIFTY26AUG24200CE", "BANKNIFTY26AUG57600CE" — verified
+exactly matching Groww's documented format) still gets rejected by
+/v1/live-data/quote with 400 GA001 "bad request". This rules out
+symbol-format guessing as the cause. Something else is wrong — possibly
+segment=FNO isn't accepted by this specific endpoint despite docs
+suggesting otherwise, or a different required parameter is missing.
+Re-disabled to keep the trading day stable — needs Groww support
+clarification or live experimentation (e.g. Postman/curl) rather than
+further blind guessing in a future session. Diagnostic logging (exact
+trading_symbol + full URL) left in place in fetch_quote_depth() for
+whenever this is revisited.

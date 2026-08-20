@@ -338,7 +338,19 @@ def run_once():
         # RE-ENABLED (20 Aug 2026): fixed by using the trading_symbol
         # already present in the option-chain response instead of
         # guessing it — see refresh_order_flow_depth()'s docstring.
-        refresh_order_flow_depth()
+        # RE-DISABLED (20 Aug 2026, same session): even with the CONFIRMED
+        # correct trading_symbol from Groww's own option-chain response
+        # (verified live: "NIFTY26AUG24200CE", "BANKNIFTY26AUG57600CE" —
+        # exactly matching Groww's documented format), the live-data/quote
+        # endpoint STILL rejects with 400 GA001 "bad request". This rules
+        # out symbol-format guessing as the cause — something else is
+        # wrong with this endpoint/call (possibly segment=FNO isn't valid
+        # for this specific endpoint despite docs suggesting it should be,
+        # or a genuinely different required param). Needs either Groww
+        # support clarification or live experimentation (e.g. via
+        # Postman/curl with a human watching responses), not further
+        # blind guessing. Disabling to keep the trading day stable.
+        # refresh_order_flow_depth()
     _option_chain_loop_counter += 1
 
     for symbol in SYMBOLS:
