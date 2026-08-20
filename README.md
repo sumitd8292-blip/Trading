@@ -735,3 +735,22 @@ SUPPORT REQUEST SUMMARY (for Saim to send to Groww):
 Core system (candles, option chain, VSA, multi-timeframe, paper trading,
 signals, Telegram alerts) confirmed healthy and unaffected — this
 remains a standalone "bonus feature" pause, not a system-wide issue.
+
+## Standalone Order-Flow Diagnostic Agent (20 Aug 2026)
+Per Saim's architectural suggestion: instead of enabling/disabling
+order-flow code INSIDE continuous_runner.py (risking the live trading
+loop every experiment), order_flow_diagnostic_agent.py is a completely
+SEPARATE, standalone script — doesn't touch paper_trader, engine,
+signals, or anything live-trading-related. Run manually
+(`python3 order_flow_diagnostic_agent.py`) to test different approaches
+against LIVE data (fetches fresh ATM option chain, then tries multiple
+quote/LTP/exchange combinations, logging each attempt's exact
+request+result to memory/order_flow_diagnostic_log.jsonl). Tests
+include: the chain's own trading_symbol via quote/depth, via LTP, via
+BSE exchange, and a sanity-check on the plain index symbol itself.
+
+Once something here is CONFIRMED working, only then does the working
+approach get ported back into continuous_runner.py. Until then, the
+live system remains completely unaffected and stable, and this can be
+run anytime (including outside market hours for structural testing)
+without any trading risk.
