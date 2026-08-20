@@ -223,3 +223,42 @@ def fetch_quote_depth(trading_symbol, exchange="NSE", segment="FNO"):
         raise RuntimeError(f"Groww quote-depth returned non-success: {data}")
 
     return data.get("payload")
+
+
+def fetch_ltp(exchange_symbols, segment="FNO"):
+    """
+    Diagnostic alternative to fetch_quote_depth (20 Aug 2026) — tries
+    Groww's /v1/live-data/ltp endpoint instead, which uses a genuinely
+    different request structure (exchange_symbols array with "NSE_"
+    prefix combined into the symbol string, e.g. "NSE_NIFTY25APR24100PE")
+    rather than separate exchange+trading_symbol params. Used to isolate
+    whether repeated GA001 errors are specific to the quote/depth
+    endpoint, or the symbol itself is being rejected everywhere.
+
+    exchange_symbols: list of strings like ["NSE_NIFTY2682524300CE"]
+    """
+    if not GROWW_API_KEY:
+        raise RuntimeError("GROWW_API_KEY not set.")
+
+    symbols_param = ",".join(exchange_symbols)
+    url = f"{GROWW_API_BASE}/live-data/ltp?segment={segment}&exchange_symbols={symbols_param}"
+    print(f"DEBUG fetch_ltp URL: {url}")
+
+    req = urllib.request.Request(url, headers={
+        "Accept": "application/json",
+        "Authorization": f"Bearer {GROWW_API_KEY}",
+        "X-API-VERSION": "1.0",
+    })
+
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode())
+    except urllib.error.HTTPError as e:
+        raise RuntimeError(f"Groww LTP HTTP error {e.code}: {e.read().decode()[:500]}")
+    except Exception as e:
+        raise RuntimeError(f"Groww LTP request failed: {e}")
+
+    if data.get("status") != "SUCCESS":
+        raise RuntimeError(f"Groww LTP returned non-success: {data}")
+
+    return data.get("payload")

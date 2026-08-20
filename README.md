@@ -697,3 +697,13 @@ _build_option_trading_symbol() (numeric-month, e.g. built
 option-chain's own alpha-month "trading_symbol" field (which failed
 GA001). This is a genuinely different, well-evidenced format from the
 previous two failed attempts — testing live next market session.
+
+## Diagnostic: Trying LTP Endpoint as Isolation Test (20 Aug 2026)
+Attempt 4 (numeric-month format, confirmed matching Groww's own official
+docs example "NIFTY25N1823400CE") STILL failed with generic GA001 "Bad
+Request". Added a diagnostic call to the LTP endpoint
+(/v1/live-data/ltp, genuinely different request structure — exchange_symbols
+array with "NSE_" prefix) for the SAME symbol, to isolate whether this
+is specific to the quote/depth endpoint or the symbol itself is invalid
+everywhere. Non-blocking — runs alongside the existing quote_depth
+attempt, doesn't change core flow.

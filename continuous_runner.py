@@ -49,7 +49,7 @@ from greeks_bias import compute_greeks_bias
 from fii_dii import get_latest_manual_fii_bias
 from order_flow_depth import compute_depth_imbalance, detect_absorption
 from absorption_tracker import log_absorption_event, check_absorption_resolution
-from groww_api import fetch_quote_depth
+from groww_api import fetch_quote_depth, fetch_ltp
 from order_size_anomaly import record_snapshot, check_for_anomaly
 from multi_timeframe_context import get_multi_timeframe_context
 from fvg_touch_tracker import check_fvg_touch, check_touch_resolution
@@ -168,6 +168,18 @@ def refresh_order_flow_depth():
             expiry = _EXPIRY_CALCULATORS.get(symbol, get_next_tuesday_expiry)()
             trading_symbol = _build_option_trading_symbol(symbol, atm_row["strike"], expiry, "CE")
             print(f"[{now_ist()}] {symbol}: order-flow-depth ATTEMPT 4 (numeric-month) trading_symbol='{trading_symbol}'")
+
+            # DIAGNOSTIC (20 Aug 2026): also try the SAME symbol via the
+            # LTP endpoint (genuinely different request structure —
+            # exchange_symbols array with "NSE_" prefix combined into the
+            # symbol string) to isolate whether GA001 is specific to the
+            # quote/depth endpoint or the symbol itself is being rejected
+            # everywhere. Does not block the main flow either way.
+            try:
+                ltp_result = fetch_ltp([f"NSE_{trading_symbol}"], segment="FNO")
+                print(f"[{now_ist()}] {symbol}: LTP DIAGNOSTIC SUCCESS — {ltp_result}")
+            except Exception as ltp_e:
+                print(f"[{now_ist()}] {symbol}: LTP DIAGNOSTIC also failed — {ltp_e}")
 
             payload = fetch_quote_depth(trading_symbol, exchange="NSE", segment="FNO")
             time.sleep(0.5)  # stagger — same rate-limit reasoning as option-chain fetch
