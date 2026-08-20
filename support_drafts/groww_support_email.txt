@@ -1,0 +1,33 @@
+Subject: FNO Live Market Depth API — Consistent 400 GA001 "Bad Request" for Valid Contracts
+
+Hi Groww API Support Team,
+
+I have an active Trading API subscription and am building a personal algo-trading tool using your REST API. I'm getting a consistent error when trying to fetch live market depth (order book) for FNO options, even though the same contracts work fine via your Option Chain API.
+
+ISSUE:
+GET /v1/live-data/quote and GET /v1/live-data/ltp both return HTTP 400 with the same error for FNO option contracts:
+
+{"status":"FAILURE","error":{"code":"GA001","message":"Bad Request. Please check your request parameters","metadata":null}}
+
+WHAT I'VE VERIFIED:
+1. The trading_symbol I'm using ("NIFTY26AUG24200CE" for NIFTY, strike 24200, expiry 2026-08-25) is confirmed correct — it matches:
+   - The "trading_symbol" field directly returned by your own Option Chain API (GET /v1/option-chain/exchange/NSE/underlying/NIFTY) for this exact strike
+   - The format shown in your Instruments CSV documentation examples
+2. The Option Chain API call itself works perfectly for this same contract — I can see LTP, OI, Greeks, volume, etc.
+3. I tried both endpoints with identical results:
+   - GET /v1/live-data/quote?exchange=NSE&segment=FNO&trading_symbol=NIFTY26AUG24200CE
+   - GET /v1/live-data/ltp?segment=FNO&exchange_symbols=NSE_NIFTY26AUG24200CE
+4. I also tried the CASH segment on the plain index symbol as a sanity check.
+
+QUESTIONS:
+1. Is there a separate permission/subscription requirement specifically for FNO Level-2 market depth (distinct from Option Chain/Greeks access), that might not be enabled on my account?
+2. Is there a specific format difference for trading_symbol between the Option Chain API and the Live Data (quote/ltp) APIs that I might be missing?
+3. Could you please check server-side what's actually failing validation for this specific request?
+
+My account email: [YOUR GROWW ACCOUNT EMAIL HERE]
+API Key (last 4 chars only, for reference): [LAST 4 CHARS]
+
+Thank you for your help!
+
+Regards,
+Saim

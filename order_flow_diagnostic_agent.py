@@ -115,6 +115,23 @@ def run_diagnostics():
         r = try_quote_depth(symbol, exchange="NSE", segment="CASH")
         log_attempt(f"{symbol} — plain index symbol via quote/depth (sanity check)", symbol, r)
 
+        # Test 5: exchange_token (authoritative, from instruments CSV lookup)
+        # tried AS the trading_symbol value — unconventional but cheap to
+        # test, since Groww's docs show exchange_token is what WebSocket
+        # Feed actually uses successfully (confirmed via GrowwMCP: NIFTY
+        # 24200 CE has exchange_token "61647", live depth data works)
+        try:
+            from groww_api import find_exchange_token
+            token_info = find_exchange_token(symbol, strike, expiry, "CE")
+            if token_info and token_info.get("exchange_token"):
+                r = try_quote_depth(token_info["exchange_token"])
+                log_attempt(f"{symbol} — exchange_token as trading_symbol param", token_info, r)
+            else:
+                log_attempt(f"{symbol} — exchange_token lookup", f"strike={strike} expiry={expiry}",
+                             {"success": False, "error": "not found in instruments CSV"})
+        except Exception as e:
+            log_attempt(f"{symbol} — exchange_token lookup failed", "", {"success": False, "error": str(e)})
+
 
 if __name__ == "__main__":
     run_diagnostics()

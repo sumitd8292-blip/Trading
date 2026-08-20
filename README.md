@@ -754,3 +754,30 @@ approach get ported back into continuous_runner.py. Until then, the
 live system remains completely unaffected and stable, and this can be
 run anytime (including outside market hours for structural testing)
 without any trading risk.
+
+## Two New Isolated Tools: Instruments Lookup + WebSocket Feed Test (20 Aug 2026)
+Per Saim's research finding (Indian order-flow platforms like VolumeLens
+use Groww's WebSocket Feed via exchange_token, not the REST trading_symbol
+endpoint we've been struggling with):
+
+1. **groww_api.download_instruments_csv() + find_exchange_token()**:
+   downloads Groww's official public instruments master list
+   (growwapi-assets.groww.in/instruments/instrument.csv) and looks up
+   the AUTHORITATIVE exchange_token for any contract — no more guessing
+   trading_symbol formats. Confirmed via GrowwMCP this session: NIFTY
+   24200 CE's exchange_token is "61647", and live full 5-level depth
+   data was successfully retrieved using it via GrowwMCP's own mechanism.
+
+2. **order_flow_diagnostic_agent.py Test 5**: tries the exchange_token
+   AS the trading_symbol parameter in our existing REST quote/depth call
+   (cheap, quick test).
+
+3. **websocket_feed_test.py** (new, standalone): tests Groww's actual
+   WebSocket Feed (GrowwFeed class from the official growwapi Python
+   SDK — `pip install growwapi --break-system-packages`), which is what
+   real platforms use. Completely isolated from continuous_runner.py —
+   safe to test anytime without any live-trading risk.
+
+All three remain isolated from the live trading system per Saim's
+architectural decision — only a CONFIRMED working approach gets ported
+back into continuous_runner.py's refresh_order_flow_depth().

@@ -262,3 +262,69 @@ def fetch_ltp(exchange_symbols, segment="FNO"):
         raise RuntimeError(f"Groww LTP returned non-success: {data}")
 
     return data.get("payload")
+
+
+INSTRUMENTS_CSV_URL = "https://growwapi-assets.groww.in/instruments/instrument.csv"
+_INSTRUMENTS_CACHE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "instruments_cache.csv")
+
+
+def download_instruments_csv(force=False):
+    """
+    Downloads Groww's official instruments master list (public URL, no
+    auth needed) and caches it locally. This is the AUTHORITATIVE source
+    for exchange_token, trading_symbol, and all other instrument
+    identifiers — added 20 Aug 2026 after repeated guessing failures on
+    order-flow-depth's trading_symbol. Per Saim's research finding: real
+    Indian order-flow platforms (e.g. VolumeLens) use exchange_token via
+    WebSocket feeds, not guessed trading_symbol strings via REST.
+
+    Re-downloads only if the cache doesn't exist or force=True (this
+    file changes daily as contracts expire/get listed, so cache for a
+    trading day at most).
+    """
+    if not force and os.path.exists(_INSTRUMENTS_CACHE_PATH):
+        return _INSTRUMENTS_CACHE_PATH
+
+    req = urllib.request.Request(INSTRUMENTS_CSV_URL, headers={"Accept": "text/csv"})
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            content = resp.read().decode()
+    except Exception as e:
+        raise RuntimeError(f"Failed to download instruments CSV: {e}")
+
+    os.makedirs(os.path.dirname(_INSTRUMENTS_CACHE_PATH), exist_ok=True)
+    with open(_INSTRUMENTS_CACHE_PATH, "w") as f:
+        f.write(content)
+    return _INSTRUMENTS_CACHE_PATH
+
+
+def find_exchange_token(underlying_symbol, strike_price, expiry_date, option_type="CE", force_refresh=False):
+    """
+    Looks up the AUTHORITATIVE exchange_token for a specific option
+    contract from Groww's own instruments CSV — no guessing, no string
+    construction. underlying_symbol e.g. "NIFTY"/"BANKNIFTY",
+    expiry_date in "YYYY-MM-DD" format, option_type "CE"/"PE".
+
+    Returns dict with exchange_token, trading_symbol, groww_symbol, or
+    None if not found.
+    """
+    import csv as csv_module
+
+    path = download_instruments_csv(force=force_refresh)
+    with open(path) as f:
+        reader = csv_module.DictReader(f)
+        for row in reader:
+            if (row.get("underlying_symbol") == underlying_symbol and
+                    row.get("expiry_date") == expiry_date and
+                    row.get("instrument_type") == option_type):
+                try:
+                    if float(row.get("strike_price", -1)) == float(strike_price):
+                        return {
+                            "exchange_token": row.get("exchange_token"),
+                            "trading_symbol": row.get("trading_symbol"),
+                            "groww_symbol": row.get("groww_symbol"),
+                            "exchange": row.get("exchange"),
+                        }
+                except (ValueError, TypeError):
+                    continue
+    return None
