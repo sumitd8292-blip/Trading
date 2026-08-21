@@ -87,7 +87,17 @@ def stream_depth(instruments, depth_level=20, duration_seconds=30):
 
 
 if __name__ == "__main__":
-    # Test with NIFTY 24200 CE (security_id 61647, confirmed via search
-    # earlier this session) — exchange_segment for NSE F&O options
-    result = stream_depth([(2, "61647")], depth_level=20, duration_seconds=15)
+    # FIX (21 Aug 2026): was hardcoded to yesterday's ATM strike (61647,
+    # NIFTY 24200 CE) — with today's gap-down open (spot ~24245), that
+    # strike is no longer ATM. Confirmed via Dhan search (live, this
+    # session) that today's correct near-ATM strike is NIFTY 24250 CE,
+    # securityId=61671, 25-Aug-2026 expiry. Using this directly rather
+    # than dynamic lookup (the earlier dynamic-lookup attempt incorrectly
+    # mixed in Groww's token system, which is NOT compatible with Dhan's
+    # security_id numbering — a proper Dhan-native instrument search
+    # function is a future improvement, this hardcoded value is
+    # confirmed correct for TODAY specifically).
+    print("Using today's confirmed ATM strike: NIFTY 24250 CE, securityId=61671")
+    print(f"\nListening for 20s on exchange_token=61671...")
+    result = stream_depth([(2, "61671")], depth_level=20, duration_seconds=20)
     print(f"\nTotal packets received: {len(result)}")
