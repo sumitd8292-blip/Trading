@@ -256,6 +256,7 @@ def refresh_multi_timeframe_context(symbol):
     except Exception as e:
         print(f"[{now_ist()}] {symbol}: multi-timeframe context fetch failed (non-fatal) — {e}")
 _last_signal_state = {}  # symbol -> previous tick's signal, for edge-triggered entry detection
+_last_data_sync_time = None  # when memory/data was last auto-pushed to GitHub
 _last_poc_signal_state = {}  # symbol -> previous tick's POC-strategy signal, edge-triggered separately
 _latest_vix = None          # India VIX level, refreshed alongside option chain
 _latest_depth_imbalance = {}  # symbol -> order-book depth imbalance dict (real order flow, not OI)
@@ -502,11 +503,25 @@ def is_market_hours(now=None):
 
 
 def run_once():
-    global _option_chain_loop_counter
+    global _option_chain_loop_counter, _last_data_sync_time
     today = now_ist().strftime("%Y-%m-%d")
     alerted = _load_alerted()
 
     now_t = now_ist().time()
+
+    # Auto-sync accumulated data to GitHub every 15 min (added 21 Aug
+    # 2026, per Saim's explicit request — so Claude can `git pull` and
+    # directly inspect real, current data without Saim ever needing to
+    # copy-paste large outputs back into a chat session again)
+    if _last_data_sync_time is None or (now_ist() - _last_data_sync_time).total_seconds() >= 900:
+        try:
+            from auto_sync_data import sync_data_to_github
+            sync_result = sync_data_to_github()
+            if sync_result.get("status") == "synced":
+                print(f"[{now_ist()}] Data auto-synced to GitHub")
+            _last_data_sync_time = now_ist()
+        except Exception as e:
+            print(f"[{now_ist()}] Data auto-sync failed (non-fatal) — {e}")
 
     # Refresh live option chain (OI/PCR + Gamma Exposure) and VIX every N loops
     if _option_chain_loop_counter % OPTION_CHAIN_REFRESH_LOOPS == 0:

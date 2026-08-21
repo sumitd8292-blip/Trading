@@ -985,3 +985,23 @@ detected a 6.5x-volume directional spike); real historical validation
 limited by yesterday's saved dataset lacking full OHLC — works
 correctly on live data going forward. Observational only for now (Box
 17 in STRATEGY_CATALOG.md) — doesn't yet feed a trading signal.
+
+## Auto-Sync: VPS Data → GitHub, No Copy-Paste Ever Needed (21 Aug 2026)
+Per Saim's explicit request: Claude should never have to ask Saim to
+copy-paste large data outputs (learning_loop results, paper trades,
+tracker logs) into a chat session again — that burns session length
+and forces waiting for the next day.
+
+auto_sync_data.py: sync_data_to_github() commits+pushes the memory/ and
+data/ directories (JSON/JSONL tracking data — NOT credentials, which
+stay only in the systemd service file) to the same GitHub repo Claude
+already reads code from. Wired into continuous_runner.py to run
+automatically every 15 minutes. Claude can now just `git pull` in any
+fresh session and directly inspect real, current, accumulated data.
+
+ONE-TIME SETUP NEEDED ON VPS: run setup_git_push_credentials() once
+(embeds a GitHub PAT in the VPS's own git remote URL — standard
+practice for a private server doing automated pushes) so
+continuous_runner.py can push unattended, without needing Claude to
+manually set/unset a temporary PAT each time (the pattern used for
+Claude's own manual pushes throughout this project).
