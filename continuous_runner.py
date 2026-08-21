@@ -557,6 +557,22 @@ def run_once():
                 print(f"[{now_ist()}] {symbol}: session split analysis failed (non-fatal) — {e}")
             _session_split_analyzed_today[symbol] = today
 
+            # Opening-impact analysis (added 21 Aug 2026, per Saim's
+            # hypothesis: pre-market position adjustments release all at
+            # once at 9:15 open, producing the day's single biggest move
+            # in the first few minutes — tests this using price data
+            # alone, the order-flow-depth-based "why" comes later once
+            # that's unblocked)
+            try:
+                from opening_impact_tracker import analyze_opening_impact
+                opening_event = analyze_opening_impact(symbol, today, candles)
+                if opening_event:
+                    print(f"[{now_ist()}] {symbol}: OPENING IMPACT — opening_range={opening_event['opening_range']}, "
+                          f"biggest_elsewhere={opening_event['max_other_5min_range']} at {opening_event['max_other_window_time']}, "
+                          f"opening_was_biggest={opening_event['is_opening_the_biggest']}")
+            except Exception as e:
+                print(f"[{now_ist()}] {symbol}: opening impact analysis failed (non-fatal) — {e}")
+
             # Footprint compress-and-cleanup (per Saim's 19 Aug agreement:
             # keep the compressed per-price-level summary PERMANENTLY —
             # it's what explains WHY a level is support/resistance — but

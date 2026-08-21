@@ -885,3 +885,22 @@ Saim in terminal sessions so far) — fails silently/non-fatally if not
 set, so this doesn't disrupt live Groww-powered trading, but won't
 actually log anything until Dhan credentials are added to the service
 file permanently.
+
+## Opening-Impact Tracker: Is the Open the Day's Biggest Move? (21 Aug 2026)
+Per Saim's detailed hypothesis: big players adjust futures/options
+positions overnight/pre-market as sentiment shifts (hedging if their
+prior view now looks wrong), and this accumulated repositioning
+releases all at once when continuous trading resumes at 9:15 — producing
+the day's single biggest move in the first few minutes, bigger than any
+other window all day. Saim explicitly noted the full causal story (WHO
+is punching orders, WHY) needs order-flow-depth (still blocked), but the
+OBSERVABLE price-only piece — is the opening range actually the day's
+biggest — is testable right now.
+
+opening_impact_tracker.py: analyze_opening_impact() compares the first
+5-min (9:15-9:20) range against the single LARGEST 5-min rolling range
+found anywhere else in the rest of the day (a genuine "biggest
+competitor" comparison, not just an average), computing whether opening
+actually wins and by what ratio. review_opening_impact_stats() reports
+the accumulated hit-rate across tracked days. Wired into
+continuous_runner.py's end-of-day flow, tested end-to-end.
