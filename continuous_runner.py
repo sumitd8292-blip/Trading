@@ -437,7 +437,7 @@ def run_once():
     # GIFT NIFTY's implied gap direction for later comparison against
     # the actual opening move.
     now_t = now_ist().time()
-    if dtime(9, 13) <= now_t <= dtime(9, 15):
+    if dtime(9, 0) <= now_t <= dtime(9, 20):
         check_pre_open_signal()
 
     # Refresh live option chain (OI/PCR + Gamma Exposure) and VIX every N loops
