@@ -924,8 +924,19 @@ def run_once():
                             "delta": sugg["delta"], "ltp": sugg["ltp"], "theta": sugg.get("theta"),
                         }
 
+                # Time-adaptive SL/target (added 21 Aug 2026, per Saim's
+                # verified observation: morning ~1.6x more volatile than
+                # midday — a fixed 15/25 SL/target mismatches this,
+                # causing midday trades to drift without hitting either
+                # level cleanly)
+                from time_adaptive_risk import get_time_adjusted_sl_target
+                adjusted = get_time_adjusted_sl_target(
+                    result.get("sl_points", 15), result.get("target_points", 25), now_ist().time())
+                print(f"[{symbol}] Time-adjusted risk ({adjusted['time_window']}, {adjusted['multiplier_used']}x): "
+                      f"SL={adjusted['sl_points']}, Target={adjusted['target_points']}")
+
                 pt_result = open_paper_trade(symbol, today, result["signal"], closes[-1],
-                                              result.get("sl_points", 15), result.get("target_points", 25),
+                                              adjusted["sl_points"], adjusted["target_points"],
                                               result.get("layer_status", {}), result["score"], result["reasons"],
                                               strategy_type=strategy_type, option_snapshot=option_snapshot, vix_level=_latest_vix)
                 if pt_result is None:

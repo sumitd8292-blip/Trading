@@ -1005,3 +1005,20 @@ practice for a private server doing automated pushes) so
 continuous_runner.py can push unattended, without needing Claude to
 manually set/unset a temporary PAT each time (the pattern used for
 Claude's own manual pushes throughout this project).
+
+## Time-Adaptive SL/Target — Data-Verified (21 Aug 2026)
+Saim's hypothesis TESTED against real 4-day 1-min NIFTY data (only
+continuous-logging days available): morning (9:15-11:00) averages
+4.09pts/min movement, midday (11:00-14:00) only 2.54pts/min (~38%
+less), afternoon 3.16pts/min — consistent pattern across all 4 days.
+This directly explains Saim's flagged symptom: a fixed 15/25pt SL/
+target (calibrated to whole-day average) mismatches midday's lower
+volatility, causing trades to drift without cleanly hitting either level.
+
+time_adaptive_risk.py: get_time_adjusted_sl_target() scales SL/target
+by time-of-day multiplier (1.25x morning / 0.78x midday / 0.97x
+afternoon), preserving the underlying R:R ratio. Wired into
+continuous_runner.py's paper-trade-opening flow — every new trade now
+gets time-appropriate SL/target instead of the fixed 15/25. Honestly
+documented as calibrated from only 4 days — should be recalibrated as
+more data accumulates via auto-sync.

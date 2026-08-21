@@ -191,3 +191,20 @@ signal."
 - **Status**: LIVE, observational only (prints detection, doesn't yet feed
   a trading signal or paper trade) — a detection layer to build on, not a
   strategy yet.
+
+## BOX 18: Time-Adaptive SL/Target (risk-management layer, added 21 Aug 2026)
+- **Origin**: Saim's observation, TESTED against real 4-day 1-min NIFTY data
+  (only continuous days available: 10, 11, 12, 21 Aug) — CONFIRMED: morning
+  (9:15-11:00) avg 4.09pts/min movement, midday (11:00-14:00) avg 2.54pts/min
+  (~38% less), afternoon (14:00-15:15) avg 3.16pts/min. Consistent across
+  ALL 4 available days.
+- **What it does**: scales SL/target by time-of-day multiplier (1.25x morning,
+  0.78x midday, 0.97x afternoon), preserving the ~1.67:1 reward:risk ratio
+  while sizing absolute point-distances to match actual typical movement
+  in that window — directly addresses Saim's flagged symptom ("trades just
+  show losses") where a fixed 15/25 SL/target mismatched midday's lower
+  volatility (price drifts without cleanly reaching either level).
+- **Honest limitation**: calibrated from only 4 days — should be
+  RECALIBRATED as more data accumulates (now easy via auto_sync_data.py's
+  daily GitHub push).
+- **Status**: LIVE as of 21 Aug, applied to every new paper trade.
