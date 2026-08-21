@@ -116,3 +116,89 @@ def classify_bounce_conviction(bounce_candles, baseline_avg_volume):
         return "PASSIVE_DRIFT"
     else:
         return "UNCLEAR"
+
+
+def determine_trade_mode(day_type_classification, ib_breakout_result):
+    """
+    Per Market Profile theory (Dalton) verified via research 21 Aug 2026:
+    decides whether to trade RESPONSIVE (fade back toward POC — our
+    existing bounce logic) or INITIATIVE (go WITH a breakout — trend-
+    continuation, do NOT fade) — this is the missing piece Saim
+    identified: the POC-Reaction strategy previously ONLY did
+    responsive/bounce trades, with no logic for when a breakout is
+    genuine and should be followed instead of faded.
+
+    day_type_classification: output of volume_profile.classify_balance_imbalance()
+    ib_breakout_result: output of initial_balance.detect_ib_breakout()
+    (pass None if no breakout has occurred yet today)
+
+    Returns "RESPONSIVE" (use existing bounce/fade logic) or
+    "INITIATIVE" (favor continuation in the breakout direction,
+    do NOT fade) or "NEUTRAL" (insufficient signal, skip).
+    """
+    # A volume-supported Initial Balance breakout is the strongest,
+    # earliest signal of a trend day — prioritize this
+    if ib_breakout_result and ib_breakout_result.get("breakout") and ib_breakout_result.get("volume_supported"):
+        return "INITIATIVE"
+
+    # Otherwise, fall back to the day-type's balance/imbalance read
+    if day_type_classification and day_type_classification.get("classification") == "IMBALANCED":
+        return "INITIATIVE"
+
+    if day_type_classification and day_type_classification.get("classification") == "BALANCED":
+        return "RESPONSIVE"
+
+    return "NEUTRAL"
+
+
+def check_poc_reaction_signal_v2(current_price, prev_candles, poc_price, trade_mode,
+                                   approach_tolerance=20, reaction_confirmation_points=8):
+    """
+    Version 2 (21 Aug 2026) — mode-aware POC signal, per Saim's
+    instruction to properly implement Initiative-vs-Responsive rather
+    than always fading. Uses the SAME approach/confirmation logic as
+    check_poc_reaction_signal(), but INTERPRETS the reaction differently
+    based on trade_mode:
+
+    - RESPONSIVE mode: behaves exactly like the original — bounce off
+      POC = trade the bounce direction (fade back toward value)
+    - INITIATIVE mode: a "reaction" candle moving AWAY from POC in the
+      direction of the broader move is NOT treated as a fade-worthy
+      bounce — instead, we look for CONTINUATION confirmation (price
+      pushing further in the initiative direction) and trade WITH it,
+      not against it
+    - NEUTRAL mode: no signal (insufficient basis to choose either mode)
+    """
+    if trade_mode == "NEUTRAL":
+        return {"signal": "NONE", "reason": "trade mode NEUTRAL — insufficient basis"}
+
+    if trade_mode == "RESPONSIVE":
+        # identical to the original responsive/bounce logic
+        return check_poc_reaction_signal(current_price, prev_candles, poc_price,
+                                          approach_tolerance, reaction_confirmation_points)
+
+    # INITIATIVE mode: look for continuation AWAY from POC, not bounce back to it
+    if len(prev_candles) < 3:
+        return {"signal": "NONE", "reason": "insufficient history"}
+
+    distance_from_poc = current_price - poc_price
+    # price has moved decisively away from POC and is CONTINUING that direction
+    prior_distance = prev_candles[-3]["close"] - poc_price
+
+    if distance_from_poc >= reaction_confirmation_points and prior_distance > 0 and distance_from_poc > prior_distance:
+        sl_price = poc_price + 5  # SL back toward POC — if price returns to POC, initiative thesis failed
+        return {
+            "signal": "LONG", "reason": f"INITIATIVE continuation above POC {poc_price}, "
+                                          f"{distance_from_poc:.1f}pts and extending",
+            "sl_price": round(sl_price, 1), "poc_reference": poc_price, "mode": "INITIATIVE",
+        }
+
+    if distance_from_poc <= -reaction_confirmation_points and prior_distance < 0 and distance_from_poc < prior_distance:
+        sl_price = poc_price - 5
+        return {
+            "signal": "SHORT", "reason": f"INITIATIVE continuation below POC {poc_price}, "
+                                           f"{distance_from_poc:.1f}pts and extending",
+            "sl_price": round(sl_price, 1), "poc_reference": poc_price, "mode": "INITIATIVE",
+        }
+
+    return {"signal": "NONE", "reason": "INITIATIVE mode active, no confirmed continuation yet"}

@@ -100,3 +100,40 @@ def check_price_reaction_at_level(candles, level, tolerance=15, lookback_after_t
                     "price_after": after["close"], "move_points": round(move, 1),
                 })
     return touches
+
+
+def classify_balance_imbalance(profile, day_high, day_low, edge_threshold_pct=0.25):
+    """
+    Per Market Profile theory (Dalton/Steidlmayer, verified via research
+    21 Aug 2026): classifies a period as BALANCED (POC near the center
+    of the day's range — bell-shaped profile, favors mean-reversion) or
+    IMBALANCED (POC skewed toward one edge — favors trend-following).
+
+    profile: output of compute_volume_profile()
+    day_high, day_low: the full period's price extremes
+    edge_threshold_pct: how close to an edge (as % of total range) POC
+    must be to count as "imbalanced" — 0.25 means POC within the outer
+    25% of the range on either side counts as skewed/imbalanced.
+
+    Returns {"classification": "BALANCED"/"IMBALANCED", "poc_position_pct": float,
+    "skew_direction": "UP"/"DOWN"/None} — poc_position_pct is 0=at day_low,
+    1=at day_high, 0.5=exact center.
+    """
+    if not profile or day_high <= day_low:
+        return {"classification": "UNKNOWN", "poc_position_pct": None, "skew_direction": None}
+
+    total_range = day_high - day_low
+    poc_position_pct = (profile["poc_price"] - day_low) / total_range
+
+    is_imbalanced = poc_position_pct <= edge_threshold_pct or poc_position_pct >= (1 - edge_threshold_pct)
+    skew_direction = None
+    if is_imbalanced:
+        skew_direction = "UP" if poc_position_pct >= 0.5 else "DOWN"
+        # per theory: POC near TOP of range ("p-type") = bullish imbalance;
+        # POC near BOTTOM ("b-type") = bearish imbalance
+
+    return {
+        "classification": "IMBALANCED" if is_imbalanced else "BALANCED",
+        "poc_position_pct": round(poc_position_pct, 3),
+        "skew_direction": skew_direction,
+    }

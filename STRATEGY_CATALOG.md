@@ -208,3 +208,37 @@ signal."
   RECALIBRATED as more data accumulates (now easy via auto_sync_data.py's
   daily GitHub push).
 - **Status**: LIVE as of 21 Aug, applied to every new paper trade.
+
+## BOX 16 UPDATE (21 Aug 2026): Initiative vs Responsive Mode Added
+Per Saim's explicit instruction to research Market Profile theory in
+depth (multiple sources verified) and implement carefully (16 test
+scenarios run before wiring live — synthetic + real historical data,
+covering IB computation at multiple candle-resolutions, balance/
+imbalance classification, and initiative-mode continuation signals
+cross-checked against the known 17 Aug breakdown pattern):
+
+**New modules**: initial_balance.py (first-hour IB range + volume-
+supported breakout detection — the EARLIEST, most actionable day-type
+signal per Dalton's Market Profile theory), volume_profile.classify_balance_imbalance()
+(POC position within the day's range — center=balanced/mean-reversion-
+favorable, edge=imbalanced/trend-favorable, matching p-type/b-type
+patterns from Market Profile theory), poc_reaction_strategy.determine_trade_mode()
+(combines IB-breakout + balance/imbalance classification into a single
+RESPONSIVE/INITIATIVE/NEUTRAL decision), check_poc_reaction_signal_v2()
+(mode-aware: RESPONSIVE fades bounces off POC as before; INITIATIVE
+trades WITH confirmed continuation away from POC instead of fading it).
+
+**Key research finding applied**: a volume-supported Initial Balance
+breakout is the STRONGEST, EARLIEST signal (available within the first
+hour) — prioritized over the slower end-of-day balance/imbalance read.
+Also found: a day can appear "balanced" in full-day aggregate stats
+while still containing a genuine late-session imbalance/breakout (17
+Aug's own daily classification came back BALANCED despite its known
+afternoon breakdown) — this is WHY the real-time IB-breakout check
+matters alongside, not instead of, the end-of-day classification.
+
+**strategy_type now tags the mode explicitly**: "poc_reaction_responsive"
+or "poc_reaction_initiative" — so their win-rates can be tracked and
+compared SEPARATELY once enough trades accumulate (a genuinely testable
+question: does Initiative-mode or Responsive-mode perform better, and
+under what conditions).

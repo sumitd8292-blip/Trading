@@ -846,12 +846,41 @@ def run_once():
         # verification). Edge-triggered from the start (built correctly
         # this time, avoiding the level-triggered bug found 20 Aug).
         try:
-            from poc_reaction_strategy import check_poc_reaction_signal, classify_bounce_conviction
+            from poc_reaction_strategy import check_poc_reaction_signal_v2, classify_bounce_conviction, determine_trade_mode
             from volume_profile_tracker import get_current_rolling_poc
+            from volume_profile import compute_volume_profile, classify_balance_imbalance
+            from initial_balance import compute_initial_balance, detect_ib_breakout
+
             rolling_poc = get_current_rolling_poc(symbol)
             if rolling_poc and len(closes) >= 6:
+                # Determine trade mode (RESPONSIVE vs INITIATIVE) — the
+                # missing piece Saim identified 21 Aug, per Market Profile
+                # theory (verified via research + 16 test scenarios before
+                # wiring live): a genuine breakout should be traded WITH,
+                # not faded like a normal bounce.
+                trade_mode = "RESPONSIVE"  # safe default
+                try:
+                    day_profile = compute_volume_profile(futures_candles) if futures_candles else None
+                    day_classification = None
+                    if day_profile and futures_candles:
+                        day_high = max(c["close"] for c in futures_candles)
+                        day_low = min(c["close"] for c in futures_candles)
+                        day_classification = classify_balance_imbalance(day_profile, day_high, day_low)
+
+                    ib_result = None
+                    if futures_candles:
+                        ib = compute_initial_balance(futures_candles)
+                        if ib:
+                            baseline_vol = sum(c.get("volume", 0) for c in futures_candles[-20:]) / min(20, len(futures_candles))
+                            ib_result = detect_ib_breakout(closes[-1], futures_candles[-1].get("volume", 0),
+                                                            ib["ib_high"], ib["ib_low"], baseline_vol)
+
+                    trade_mode = determine_trade_mode(day_classification, ib_result)
+                except Exception as mode_e:
+                    print(f"[{now_ist()}] {symbol}: trade-mode determination failed, defaulting RESPONSIVE — {mode_e}")
+
                 recent_candles = [{"close": c} for c in closes[-6:]]
-                poc_result = check_poc_reaction_signal(closes[-1], recent_candles, rolling_poc["poc_price"])
+                poc_result = check_poc_reaction_signal_v2(closes[-1], recent_candles, rolling_poc["poc_price"], trade_mode)
                 poc_signal = poc_result["signal"]
 
                 prev_poc_signal = _last_poc_signal_state.get(symbol, "NONE")
@@ -859,6 +888,7 @@ def run_once():
                 _last_poc_signal_state[symbol] = poc_signal
 
                 if is_fresh_poc_signal:
+                    print(f"[{now_ist()}] {symbol}: TRADE MODE = {trade_mode}")
                     # Bounce-conviction classification (per Saim's "kyun
                     # bounce hua" question — active buying/selling vs
                     # passive absence, using volume magnitude as a
@@ -881,7 +911,7 @@ def run_once():
                     poc_trade = open_paper_trade(symbol, today, poc_signal, closes[-1],
                                                   poc_sl_points, poc_sl_points * 2,
                                                   {"poc_reference": poc_result["poc_reference"]}, 0,
-                                                  [poc_result["reason"]], strategy_type="poc_reaction")
+                                                  [poc_result["reason"]], strategy_type=f"poc_reaction_{trade_mode.lower()}")
                     if poc_trade:
                         print(f"[{now_ist()}] {symbol}: POC PAPER TRADE OPENED — entry={closes[-1]}, SL={poc_result['sl_price']}")
                         # Send Telegram alert (was previously missing —
@@ -890,7 +920,7 @@ def run_once():
                             poc_msg = (
                                 f"<b>Order-Flow Agent Signal</b>\n"
                                 f"Symbol: {symbol}\n"
-                                f"Strategy: <b>poc_reaction</b>\n"
+                                f"Strategy: <b>poc_reaction ({trade_mode})</b>\n"
                                 f"Signal: <b>{poc_signal}</b>\n"
                                 f"POC Reference: {poc_result['poc_reference']}\n"
                                 f"Reason: {poc_result['reason']}\n"
