@@ -143,3 +143,24 @@ if __name__ == "__main__":
     print("Daily store dir:", STORE_DIR)
     for f in os.listdir(STORE_DIR):
         print(" -", f)
+
+
+def get_previous_close(symbol, interval_label="1min"):
+    """
+    Returns the most recent completed trading day's closing price for
+    symbol, from the stored intraday log — used by pre_open_signal_tracker.py
+    to compare against GIFT NIFTY's overnight reading (added 21 Aug 2026).
+    Falls back to the 5min log if 1min isn't available. Returns None if
+    no data exists yet.
+    """
+    for label in [interval_label, "5min"]:
+        path = _path(f"{symbol}_{label}_log.jsonl")
+        entries = _read_all(path)
+        if not entries:
+            continue
+        entries.sort(key=lambda e: e["date"])
+        last_day = entries[-1]
+        candles = last_day.get("candles", [])
+        if candles:
+            return candles[-1]["close"]
+    return None

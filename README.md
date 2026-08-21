@@ -862,3 +862,26 @@ fetches still anchor their start to 9:15 (min(9:15, now) clamp) since
 regular continuous-session candle data begins there — only the LIVE
 snapshot-based fetches (option chain, depth, quotes) now genuinely
 start 15 min earlier.
+
+## Pre-Open Signal Tracker: GIFT NIFTY → Actual Opening Move (21 Aug 2026)
+Per Saim's request: combines the pre-market signal (GIFT NIFTY, now
+confirmed accessible via Dhan, securityId=5024) with NIFTY's previous
+close to compute an "implied gap direction", then checks NIFTY's actual
+5-min and 15-min post-open move against it — tracked every single day
+as accumulating evidence ("this data is always valuable").
+
+pre_open_signal_tracker.py: log_pre_open_signal() (called once ~9:13-9:15
+AM), check_actual_open_move() (called once ~9:30 AM using +5min/+15min
+candles), review_pre_open_accuracy() (reports GIFT NIFTY's real hit-rate
+as a directional predictor, at both horizons).
+
+dhan_api.py gained fetch_gift_nifty_ltp() (confirmed working:
+₹24,294.00 fetched live). daily_store.py gained get_previous_close().
+
+Wired into continuous_runner.py's main loop with time-window triggers.
+IMPORTANT: requires DHAN_CLIENT_ID/DHAN_ACCESS_TOKEN in the environment
+— NOT yet baked into the systemd service (only manually exported by
+Saim in terminal sessions so far) — fails silently/non-fatally if not
+set, so this doesn't disrupt live Groww-powered trading, but won't
+actually log anything until Dhan credentials are added to the service
+file permanently.

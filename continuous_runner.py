@@ -77,6 +77,74 @@ _close_window_start_snapshot = {}  # symbol -> option rows captured at ~15:15, f
 _close_window_analyzed_today = {}  # symbol -> date already analyzed (avoid re-running every loop tick)
 _mtf_context = {}  # symbol -> multi-timeframe (daily/1H) trend context, refreshed periodically
 _mtf_last_refresh_date = {}  # symbol -> date MTF context was last fetched (once/day is enough)
+_pre_open_signal_logged_date = None  # date the pre-open signal was already logged today
+_pre_open_signal_checked_date = None  # date the actual-move check was already done today
+
+
+def check_pre_open_signal():
+    """
+    Runs once daily around 9:14-9:15 AM (just before NIFTY opens):
+    fetches GIFT NIFTY's current value via Dhan, compares against
+    NIFTY's previous close, logs the implied gap direction — per Saim's
+    21 Aug request to track whether pre-market signals predict the
+    actual opening move. Requires DHAN_CLIENT_ID/DHAN_ACCESS_TOKEN in
+    the environment (not yet baked into the systemd service — this is
+    the first live feature needing Dhan credentials on the VPS
+    permanently, not just ad-hoc terminal testing). Fails silently
+    (non-fatal) if Dhan credentials aren't set, so this doesn't disrupt
+    the live Groww-powered trading system.
+    """
+    global _pre_open_signal_logged_date
+    today_str = now_ist().strftime("%Y-%m-%d")
+    if _pre_open_signal_logged_date == today_str:
+        return
+    try:
+        from dhan_api import fetch_gift_nifty_ltp
+        from pre_open_signal_tracker import log_pre_open_signal
+
+        gift_val = fetch_gift_nifty_ltp()
+        if gift_val is None:
+            return
+
+        # previous close: use yesterday's last known NIFTY close from
+        # daily_store (falls back gracefully if unavailable)
+        from daily_store import get_previous_close
+        prev_close = get_previous_close("NIFTY")
+        if prev_close is None:
+            print(f"[{now_ist()}] pre-open signal: no previous close available, skipping")
+            return
+
+        event = log_pre_open_signal("NIFTY", today_str, gift_val, prev_close, now_ist().isoformat())
+        if event:
+            print(f"[{now_ist()}] Pre-open signal logged: GIFT NIFTY={gift_val}, prev_close={prev_close}, "
+                  f"implied={event['implied_direction']} ({event['implied_gap_points']:+.1f}pts)")
+        _pre_open_signal_logged_date = today_str
+    except Exception as e:
+        print(f"[{now_ist()}] Pre-open signal check failed (non-fatal, likely missing Dhan credentials) — {e}")
+
+
+def check_pre_open_signal_resolution(candles_5min_after_open, candles_15min_after_open, open_price):
+    """
+    Runs once daily around 9:30 AM: checks the actual price move at
+    +5min and +15min from open against the pre-open signal logged
+    earlier, closing that day's tracking event.
+    """
+    global _pre_open_signal_checked_date
+    today_str = now_ist().strftime("%Y-%m-%d")
+    if _pre_open_signal_checked_date == today_str:
+        return
+    if not candles_5min_after_open or not candles_15min_after_open or open_price is None:
+        return
+    try:
+        from pre_open_signal_tracker import check_actual_open_move
+        closed = check_actual_open_move("NIFTY", today_str, candles_5min_after_open, candles_15min_after_open,
+                                         open_price, now_ist().isoformat())
+        if closed:
+            print(f"[{now_ist()}] Pre-open signal RESOLVED — 5min_correct={closed['prediction_correct_5min']}, "
+                  f"15min_correct={closed['prediction_correct_15min']}")
+        _pre_open_signal_checked_date = today_str
+    except Exception as e:
+        print(f"[{now_ist()}] Pre-open signal resolution check failed (non-fatal) — {e}")
 _session_split_analyzed_today = {}  # symbol -> date already analyzed
 
 
@@ -364,6 +432,14 @@ def run_once():
     today = now_ist().strftime("%Y-%m-%d")
     alerted = _load_alerted()
 
+    # Pre-open signal check (added 21 Aug 2026, Saim's request): runs
+    # once daily right before continuous trading fully starts, logging
+    # GIFT NIFTY's implied gap direction for later comparison against
+    # the actual opening move.
+    now_t = now_ist().time()
+    if dtime(9, 13) <= now_t <= dtime(9, 15):
+        check_pre_open_signal()
+
     # Refresh live option chain (OI/PCR + Gamma Exposure) and VIX every N loops
     if _option_chain_loop_counter % OPTION_CHAIN_REFRESH_LOOPS == 0:
         refresh_live_option_chain()
@@ -406,6 +482,16 @@ def run_once():
 
         append_intraday_candles(symbol, candles, interval_label="1min")
         time.sleep(0.5)  # stagger before the next call for this symbol (rate-limit mitigation)
+
+        # Pre-open signal resolution check (added 21 Aug 2026): once enough
+        # post-open candles exist for NIFTY specifically, check whether
+        # GIFT NIFTY's implied direction matched the actual move
+        if symbol == "NIFTY" and len(candles) >= 16 and now_ist().time() >= dtime(9, 30):
+            open_price = candles[0]["close"] if candles[0]["timestamp"][11:16] == "09:15" else None
+            price_5min = next((c["close"] for c in candles if c["timestamp"][11:16] == "09:20"), None)
+            price_15min = next((c["close"] for c in candles if c["timestamp"][11:16] == "09:30"), None)
+            if open_price and price_5min and price_15min:
+                check_pre_open_signal_resolution(price_5min, price_15min, open_price)
 
         closes = [c["close"] for c in candles]
         highs = [c["high"] for c in candles]

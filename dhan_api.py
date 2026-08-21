@@ -130,3 +130,21 @@ def download_instrument_list():
 if __name__ == "__main__":
     print("Dhan API base module — run with DHAN_CLIENT_ID/DHAN_ACCESS_TOKEN set to test.")
     print("Example: fetch_quote_with_depth(security_id, exchange_segment='NSE_FNO')")
+
+
+GIFT_NIFTY_SECURITY_ID = "5024"  # confirmed 21 Aug 2026 via Dhan search: "GIFTNIFTY-INDEX", segment IDX_I
+
+
+def fetch_gift_nifty_ltp():
+    """
+    Fetches GIFT NIFTY's current LTP — confirmed working 21 Aug 2026
+    (₹24,294.00 fetched successfully). This is the overnight-sentiment
+    signal Saim wants combined with pre-open order-flow to predict
+    NIFTY's opening direction (pre_open_signal_tracker.py).
+    """
+    body = {"IDX_I": [int(GIFT_NIFTY_SECURITY_ID)]}
+    result = _request("POST", "/marketfeed/ltp", body=body)
+    try:
+        return result["data"]["IDX_I"][GIFT_NIFTY_SECURITY_ID]["last_price"]
+    except (KeyError, TypeError):
+        return None
