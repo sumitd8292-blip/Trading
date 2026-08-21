@@ -39,7 +39,7 @@ def send_telegram_message(text, bot_token=None, chat_id=None):
 _OPTION_LABEL = {"LONG": "CALL", "SHORT": "PUT"}
 
 
-def format_signal_alert(symbol, result):
+def format_signal_alert(symbol, result, strategy_type=None):
     signal = result.get("signal", "NONE")
     option_label = _OPTION_LABEL.get(signal, signal)
     score = result.get("score", 0)
@@ -47,9 +47,11 @@ def format_signal_alert(symbol, result):
     sl = result.get("sl_points")
     tgt = result.get("target_points")
     reasons = "\n".join(f"• {r}" for r in result.get("reasons", []))
+    strategy_line = f"Strategy: <b>{strategy_type}</b>\n" if strategy_type else ""
     return (
         f"<b>Order-Flow Agent Signal</b>\n"
         f"Symbol: {symbol}\n"
+        f"{strategy_line}"
         f"Signal: <b>{option_label}</b> ({signal})\n"
         f"Score: {score}/{maxs}\n"
         f"SL: {sl} pts | Target: {tgt} pts\n\n"

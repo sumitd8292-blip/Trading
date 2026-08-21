@@ -77,3 +77,42 @@ def check_poc_reaction_signal(current_price, prev_candles, poc_price, approach_t
         }
 
     return {"signal": "NONE", "reason": "testing POC, no confirmed reaction yet"}
+
+
+def classify_bounce_conviction(bounce_candles, baseline_avg_volume):
+    """
+    Per Saim's 21 Aug question — "bounce back kyun hua, active-buying
+    thi ya sirf seller-absence thi?" — this is a PARTIAL answer using
+    what's available NOW (futures volume, already working) without
+    needing the still-blocked order_flow_depth/footprint data.
+
+    bounce_candles: the 2-3 candles during the confirmed bounce move
+    baseline_avg_volume: typical average volume for this symbol/time
+    (e.g. the day's average per-candle volume, or a recent N-candle avg)
+
+    Returns "ACTIVE_PARTICIPATION" (volume during the bounce was
+    genuinely elevated vs baseline — real buying/selling pressure
+    showed up) or "PASSIVE_DRIFT" (volume was normal/below baseline —
+    price moved mostly because the OPPOSING side simply wasn't there,
+    not because of active new pressure) or "UNKNOWN" if data's missing.
+
+    HONEST LIMITATION: this is a volume-MAGNITUDE proxy, not true
+    buyer/seller aggression classification (which needs footprint/
+    order-flow-depth, still blocked). Elevated volume is consistent
+    with active participation but doesn't by itself prove WHICH side
+    was aggressive — treat this as a coarse signal, not a definitive one.
+    """
+    if not bounce_candles or not baseline_avg_volume:
+        return "UNKNOWN"
+
+    bounce_avg_volume = sum(c.get("volume", 0) for c in bounce_candles) / len(bounce_candles)
+    if baseline_avg_volume <= 0:
+        return "UNKNOWN"
+
+    ratio = bounce_avg_volume / baseline_avg_volume
+    if ratio >= 1.5:
+        return "ACTIVE_PARTICIPATION"
+    elif ratio <= 0.8:
+        return "PASSIVE_DRIFT"
+    else:
+        return "UNCLEAR"

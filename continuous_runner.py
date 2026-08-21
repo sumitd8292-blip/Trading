@@ -815,7 +815,7 @@ def run_once():
         # verification). Edge-triggered from the start (built correctly
         # this time, avoiding the level-triggered bug found 20 Aug).
         try:
-            from poc_reaction_strategy import check_poc_reaction_signal
+            from poc_reaction_strategy import check_poc_reaction_signal, classify_bounce_conviction
             from volume_profile_tracker import get_current_rolling_poc
             rolling_poc = get_current_rolling_poc(symbol)
             if rolling_poc and len(closes) >= 6:
@@ -828,8 +828,24 @@ def run_once():
                 _last_poc_signal_state[symbol] = poc_signal
 
                 if is_fresh_poc_signal:
+                    # Bounce-conviction classification (per Saim's "kyun
+                    # bounce hua" question — active buying/selling vs
+                    # passive absence, using volume magnitude as a
+                    # partial proxy since full order-flow is still blocked).
+                    # Uses futures_candles (real volume, already fetched
+                    # for VSA earlier this loop iteration) — NOT the main
+                    # index `candles`, which never has volume.
+                    conviction = "UNKNOWN"
+                    try:
+                        if 'futures_candles' in dir() and futures_candles and len(futures_candles) >= 20:
+                            recent_vol_candles = futures_candles[-3:]
+                            baseline = sum(c.get("volume", 0) for c in futures_candles[-20:]) / 20
+                            conviction = classify_bounce_conviction(recent_vol_candles, baseline)
+                    except Exception:
+                        pass
+
                     print(f"[{now_ist()}] {symbol}: POC SIGNAL — {poc_signal}: {poc_result['reason']}, "
-                          f"SL={poc_result['sl_price']}")
+                          f"SL={poc_result['sl_price']}, conviction={conviction}")
                     poc_sl_points = abs(closes[-1] - poc_result["sl_price"])
                     poc_trade = open_paper_trade(symbol, today, poc_signal, closes[-1],
                                                   poc_sl_points, poc_sl_points * 2,
@@ -837,6 +853,24 @@ def run_once():
                                                   [poc_result["reason"]], strategy_type="poc_reaction")
                     if poc_trade:
                         print(f"[{now_ist()}] {symbol}: POC PAPER TRADE OPENED — entry={closes[-1]}, SL={poc_result['sl_price']}")
+                        # Send Telegram alert (was previously missing —
+                        # POC trades opened silently with no alert at all)
+                        try:
+                            poc_msg = (
+                                f"<b>Order-Flow Agent Signal</b>\n"
+                                f"Symbol: {symbol}\n"
+                                f"Strategy: <b>poc_reaction</b>\n"
+                                f"Signal: <b>{poc_signal}</b>\n"
+                                f"POC Reference: {poc_result['poc_reference']}\n"
+                                f"Reason: {poc_result['reason']}\n"
+                                f"Bounce Conviction: <b>{conviction}</b> (volume-magnitude proxy — "
+                                f"NOT true buyer/seller aggression, that needs order-flow-depth still blocked)\n"
+                                f"SL: {poc_result['sl_price']} (fail-safe — just beyond POC)\n\n"
+                                f"⚠️ Alert-only. Manual confirmation required before entry."
+                            )
+                            send_telegram_message(poc_msg)
+                        except Exception as alert_e:
+                            print(f"[{now_ist()}] {symbol}: POC alert send failed (non-fatal) — {alert_e}")
         except Exception as e:
             print(f"[{now_ist()}] {symbol}: POC reaction strategy check failed (non-fatal) — {e}")
 
@@ -896,7 +930,12 @@ def run_once():
             print(f"[{now_ist()}] {symbol}: signal already alerted today, skipping")
             continue
 
-        msg = format_signal_alert(symbol, result) + f"\n\nData date: {today} (live, VPS)"
+        # Explicit strategy tagging (added 21 Aug 2026, per Saim's
+        # request: alerts were ambiguous about which strategy fired —
+        # now derived and passed explicitly rather than left implicit
+        # in the reasons text.
+        alert_strategy_type = "trend_continuation" if any("TREND-CONTINUATION" in r for r in result["reasons"]) else "reversal"
+        msg = format_signal_alert(symbol, result, strategy_type=alert_strategy_type) + f"\n\nData date: {today} (live, VPS)"
 
         # Strike suggestion (added 18 Aug 2026, Saim's request): tell him
         # WHICH strike to actually look at, its current premium, Delta,

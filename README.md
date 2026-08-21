@@ -947,3 +947,25 @@ rollover-aware logic, never mixing volume across different contracts).
 Wired into continuous_runner.py's EOD flow, fetching the day's full
 futures candle series once (no extra per-minute API calls). Tested
 end-to-end against real historical data.
+
+## Strategy-Tagging in Alerts + Bounce-Conviction Classification (21 Aug 2026)
+Per Saim's two requests:
+
+1. **Strategy clearly identified in every alert** — format_signal_alert()
+   now takes an explicit strategy_type parameter (shown as "Strategy:
+   <b>reversal</b>" or "Strategy: <b>trend_continuation</b>" in the
+   message), rather than leaving it implicit/inferrable from the reasons
+   text. POC-Reaction signals (which previously opened paper trades
+   SILENTLY with no Telegram alert at all — a gap now fixed) also send
+   an alert clearly tagged "Strategy: poc_reaction".
+
+2. **"Why did it bounce" — partial answer via volume magnitude**:
+   classify_bounce_conviction() in poc_reaction_strategy.py compares the
+   bounce candles' average volume against a 20-candle baseline (using
+   FUTURES volume, already working) — flags ACTIVE_PARTICIPATION
+   (genuinely elevated volume, real pressure showed up) vs PASSIVE_DRIFT
+   (normal/low volume, price moved more because the opposing side
+   simply wasn't there) vs UNCLEAR. Explicitly documented as a coarse
+   proxy, NOT true buyer/seller aggression classification (which needs
+   order-flow-depth/footprint data, still blocked pending Groww/Dhan
+   resolution) — shown in the alert with this honest caveat included.
