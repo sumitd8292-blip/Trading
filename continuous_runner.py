@@ -607,6 +607,22 @@ def run_once():
 
         s_bias = get_smc_bias(candles)
 
+        # LTF Volume Microburst detection (added 21 Aug 2026) — checks
+        # only the LATEST futures candle against recent baseline, since
+        # this runs every loop tick already (no extra API calls, reuses
+        # futures_candles fetched above for VSA)
+        try:
+            from ltf_microburst import scan_for_microbursts
+            if futures_candles and len(futures_candles) >= 25:
+                recent_events = scan_for_microbursts(futures_candles[-25:], ema_period=20)
+                # only report if the VERY LAST candle is a fresh microburst
+                if recent_events and recent_events[-1]["index"] == len(futures_candles[-25:]) - 1:
+                    ev = recent_events[-1]
+                    print(f"[{now_ist()}] {symbol}: LTF MICROBURST — {ev['direction']}, "
+                          f"volume={ev['volume_ratio']}x baseline, directional_efficiency={ev['directional_efficiency']}")
+        except Exception as e:
+            print(f"[{now_ist()}] {symbol}: LTF microburst check failed (non-fatal) — {e}")
+
         # Multi-timeframe context refresh — RE-ENABLED with diagnostic
         # logging (20 Aug 2026) to capture the exact params + error
         # message and finally diagnose the persistent HTTP 400.

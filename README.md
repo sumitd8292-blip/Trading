@@ -969,3 +969,19 @@ Per Saim's two requests:
    proxy, NOT true buyer/seller aggression classification (which needs
    order-flow-depth/footprint data, still blocked pending Groww/Dhan
    resolution) — shown in the alert with this honest caveat included.
+
+## LTF Volume Microburst Detector (21 Aug 2026)
+Synthesizes two TradingView indicators (Leviathan's Volume Profile —
+already implemented via volume_profile.py; Zeiierman's LTF Volume
+Microburst Bubbles) with the SEBI/Copthall CAS-manipulation case
+mechanics discussed today. ltf_microburst.py: compute_volume_baseline()
+(EMA of recent volume), compute_directional_efficiency() (body/range
+ratio, filters wick-dominated candles per Zeiierman's approach),
+detect_microburst() / scan_for_microbursts() (finds concentrated,
+directional volume spikes). Wired into continuous_runner.py, checking
+each new futures candle (reuses the same fetch already done for VSA,
+no extra API calls). Tested via synthetic injection (correctly
+detected a 6.5x-volume directional spike); real historical validation
+limited by yesterday's saved dataset lacking full OHLC — works
+correctly on live data going forward. Observational only for now (Box
+17 in STRATEGY_CATALOG.md) — doesn't yet feed a trading signal.

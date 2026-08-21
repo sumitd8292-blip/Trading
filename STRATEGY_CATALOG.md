@@ -169,3 +169,25 @@ signal."
 - **Status**: LIVE, tagged as strategy_type="poc_reaction" — independent of
   RSI-Reversal/Trend-Continuation (Boxes 1-2), tracked separately in
   learning_loop so its own win-rate can be judged on its own merits.
+
+## BOX 17: LTF Volume Microburst Detector (observational, added 21 Aug 2026)
+- **Timeframe**: 1-min, checks each new futures candle against a 20-period volume EMA baseline
+- **Data needed**: futures candles+volume (have this, live — already fetched for VSA/Box 3, no extra API calls)
+- **Backtestable now?**: PARTIALLY — logic verified via synthetic test (correctly
+  flagged an injected 6.5x-volume directional spike), but real historical
+  verification is limited since our saved 15-day dataset only has close+volume
+  (no OHLC), so directional-efficiency couldn't be tested against real data yet.
+  Live data (fetch_candles) has full OHLC, so this works correctly going forward.
+- **Origin**: synthesized from two TradingView indicators discussed 21 Aug
+  (Leviathan's Market Sessions/Volume Profile — already Box implemented;
+  Zeiierman's LTF Volume Microburst Bubbles) combined with the SEBI/Copthall
+  CAS-manipulation case mechanics (three 2-13-second concentrated spikes, one
+  entity dominating 99%+ of order value in each).
+- **Honest scope limitation**: detects volume-CONCENTRATION anomalies only.
+  Does NOT detect the order-CANCELLATION-rate pattern SEBI found (place huge
+  orders, cancel ~a third after price moves) — that needs order-book-level
+  data (order-flow-depth, still blocked). This is the "volume spike" half of
+  the mechanism, not the "spoof and cancel" half.
+- **Status**: LIVE, observational only (prints detection, doesn't yet feed
+  a trading signal or paper trade) — a detection layer to build on, not a
+  strategy yet.
