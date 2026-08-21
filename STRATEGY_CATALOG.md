@@ -340,3 +340,18 @@ across all 4 strategies (avoiding duplicated logic). Currently uses a
 default simulated ₹100,000 account capital (paper-trading — real
 capital tracking is a future step once live trading begins).
 15 total tests run before considering this item done.
+
+## BOX 17 REDESIGN COMPLETE (21 Aug 2026): Microburst Now a Confirmation Layer
+Per Saim's #3-of-5 priority — implements the redesign proposed (but
+unvalidated) earlier same day: LTF Microburst is no longer a standalone
+strategy — it's a CONFIRMATION signal for POC-Reaction trades.
+get_microburst_confirmation() in poc_reaction_strategy.py: when price
+approaches POC, checks if the latest candle's microburst fires OPPOSITE
+to the approach direction (fresh counter-pressure → CONFIRMS_BOUNCE) or
+SAME direction (continuing conviction → CONFIRMS_BREAKDOWN). 6 tests
+(all 4 direction/burst combinations, no-microburst case, None-safety)
+plus 1 real-data run (17 Aug, ran cleanly though inconclusive due to
+known test-dataset OHLC limitation). Wired into continuous_runner.py's
+POC-reaction check — informational for now (logged + shown in Telegram
+alert), not yet gating the trade (observing before hard-gating, day 1
+of this integration).

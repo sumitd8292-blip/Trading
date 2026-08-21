@@ -202,3 +202,38 @@ def check_poc_reaction_signal_v2(current_price, prev_candles, poc_price, trade_m
         }
 
     return {"signal": "NONE", "reason": "INITIATIVE mode active, no confirmed continuation yet"}
+
+
+def get_microburst_confirmation(approach_direction, microburst_result):
+    """
+    THE CONFIRMATION-LAYER INTEGRATION (21 Aug 2026, Saim's priority #3
+    of 5) — the redesign proposed earlier: LTF Microburst should NOT be
+    a standalone strategy, it should CONFIRM or CONTRADICT a POC
+    reaction signal.
+
+    approach_direction: "FROM_ABOVE" or "FROM_BELOW" (which way price
+    was moving as it approached the POC level)
+    microburst_result: output of ltf_microburst.detect_microburst() for
+    the current/most-recent candle
+
+    Logic: if the microburst fires in the OPPOSITE direction to the
+    approach, it means fresh, aggressive counter-pressure just showed
+    up — CONFIRMS a genuine bounce. If it fires in the SAME direction
+    as the approach, it means the move has real conviction continuing
+    — CONFIRMS a genuine breakdown/continuation, not a bounce.
+
+    Returns "CONFIRMS_BOUNCE", "CONFIRMS_BREAKDOWN", or "NO_CONFIRMATION"
+    (no qualifying microburst detected — genuinely uninformative, not a
+    vote either way).
+    """
+    if not microburst_result or not microburst_result.get("is_microburst"):
+        return "NO_CONFIRMATION"
+
+    burst_direction = microburst_result["direction"]
+
+    if approach_direction == "FROM_ABOVE":
+        return "CONFIRMS_BOUNCE" if burst_direction == "BULLISH" else "CONFIRMS_BREAKDOWN"
+    elif approach_direction == "FROM_BELOW":
+        return "CONFIRMS_BOUNCE" if burst_direction == "BEARISH" else "CONFIRMS_BREAKDOWN"
+    else:
+        return "NO_CONFIRMATION"

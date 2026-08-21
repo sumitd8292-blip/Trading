@@ -910,6 +910,29 @@ def run_once():
 
                 if is_fresh_poc_signal:
                     print(f"[{now_ist()}] {symbol}: TRADE MODE = {trade_mode}")
+
+                    # Microburst confirmation-layer (added 21 Aug 2026,
+                    # Saim's priority #3 of 5 — the redesign: Microburst
+                    # is now a CONFIRMATION signal for POC-reaction, not
+                    # a standalone strategy). Informational for now
+                    # (logged/included in the alert) — not yet gating
+                    # the trade, per "observe before hard-gating" caution
+                    # on day 1 of this integration.
+                    microburst_confirmation = "NO_CONFIRMATION"
+                    try:
+                        from ltf_microburst import detect_microburst, compute_volume_baseline
+                        from poc_reaction_strategy import get_microburst_confirmation
+                        if futures_candles and len(futures_candles) >= 25:
+                            baseline = compute_volume_baseline(futures_candles[-25:-1])
+                            burst = detect_microburst(futures_candles[-1], baseline)
+                            approach_dir = "FROM_ABOVE" if closes[-1] < rolling_poc["poc_price"] else "FROM_BELOW"
+                            microburst_confirmation = get_microburst_confirmation(approach_dir, burst)
+                            if microburst_confirmation != "NO_CONFIRMATION":
+                                print(f"[{now_ist()}] {symbol}: MICROBURST CONFIRMATION — {microburst_confirmation} "
+                                      f"(burst={burst.get('direction')}, ratio={burst.get('volume_ratio')})")
+                    except Exception as burst_e:
+                        print(f"[{now_ist()}] {symbol}: microburst confirmation check failed (non-fatal) — {burst_e}")
+
                     # Bounce-conviction classification (per Saim's "kyun
                     # bounce hua" question — active buying/selling vs
                     # passive absence, using volume magnitude as a
@@ -961,6 +984,7 @@ def run_once():
                                 f"Reason: {poc_result['reason']}\n"
                                 f"Bounce Conviction: <b>{conviction}</b> (volume-magnitude proxy — "
                                 f"NOT true buyer/seller aggression, that needs order-flow-depth still blocked)\n"
+                                f"Microburst Confirmation: <b>{microburst_confirmation}</b>\n"
                                 f"SL: {poc_result['sl_price']} (fail-safe — just beyond POC)\n\n"
                                 f"⚠️ Alert-only. Manual confirmation required before entry."
                             )
