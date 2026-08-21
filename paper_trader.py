@@ -414,3 +414,18 @@ def validate_prediction_against_footprint(trade, footprint_summary_at_entry):
         "note": "Cross-checks whether real order-flow (footprint) supported the trade's direction at entry — "
                 "the missing link between Delta-based prediction and actual market microstructure.",
     }
+
+
+def get_all_open_positions():
+    """
+    Returns all currently OPEN paper trades across ALL symbols, in the
+    format portfolio_agent.py's functions expect: [{symbol, direction,
+    risk_pct}]. Added 21 Aug 2026 for Portfolio Agent integration (Saim's
+    priority #2 of 5) — a reusable helper so every strategy's trade-
+    opening code path can check portfolio-level constraints consistently,
+    rather than duplicating this logic 4 times.
+    """
+    entries = _read_all()
+    open_trades = [e for e in entries if e.get("status") == "OPEN"]
+    return [{"symbol": t["symbol"], "direction": t["signal"],
+             "risk_pct": t.get("risk_pct", 1.5)} for t in open_trades]

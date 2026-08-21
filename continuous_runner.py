@@ -929,10 +929,24 @@ def run_once():
                     print(f"[{now_ist()}] {symbol}: POC SIGNAL — {poc_signal}: {poc_result['reason']}, "
                           f"SL={poc_result['sl_price']}, conviction={conviction}")
                     poc_sl_points = abs(closes[-1] - poc_result["sl_price"])
+
+                    # Portfolio Agent gate (added 21 Aug 2026, Saim's
+                    # priority #2 of 5) — checks BEFORE opening whether
+                    # this new position would exceed portfolio-level
+                    # limits (max concurrent positions, total capital-
+                    # at-risk, correlation warning)
+                    from portfolio_agent import check_can_open_new_position
+                    from paper_trader import get_all_open_positions
+                    portfolio_check = check_can_open_new_position(
+                        get_all_open_positions(), symbol, poc_signal, 1.5, 100000)
+                    for reason in portfolio_check["reasons"]:
+                        print(f"[{now_ist()}] {symbol}: PORTFOLIO AGENT — {reason}")
+
                     poc_trade = open_paper_trade(symbol, today, poc_signal, closes[-1],
                                                   poc_sl_points, poc_sl_points * 2,
                                                   {"poc_reference": poc_result["poc_reference"]}, 0,
-                                                  [poc_result["reason"]], strategy_type=f"poc_reaction_{trade_mode.lower()}")
+                                                  [poc_result["reason"]], strategy_type=f"poc_reaction_{trade_mode.lower()}") \
+                                if portfolio_check["can_open"] else None
                     if poc_trade:
                         print(f"[{now_ist()}] {symbol}: POC PAPER TRADE OPENED — entry={closes[-1]}, SL={poc_result['sl_price']}")
                         # Send Telegram alert (was previously missing —
@@ -980,11 +994,21 @@ def run_once():
                     print(f"[{now_ist()}] {symbol}: NAKED POC SIGNAL — {naked_signal}: {naked_result['reason']}, "
                           f"targets={naked_result.get('suggested_targets', [])}")
                     naked_sl_points = abs(closes[-1] - naked_result["sl_price"])
+
+                    # Portfolio Agent gate (added 21 Aug 2026)
+                    from portfolio_agent import check_can_open_new_position
+                    from paper_trader import get_all_open_positions
+                    naked_portfolio_check = check_can_open_new_position(
+                        get_all_open_positions(), symbol, naked_signal, 1.5, 100000)
+                    for reason in naked_portfolio_check["reasons"]:
+                        print(f"[{now_ist()}] {symbol}: PORTFOLIO AGENT — {reason}")
+
                     naked_trade = open_paper_trade(symbol, today, naked_signal, closes[-1],
                                                      naked_sl_points, naked_sl_points * 2,
                                                      {"naked_poc_reference": naked_result["naked_poc_used"],
                                                       "suggested_targets": naked_result.get("suggested_targets", [])},
-                                                     0, [naked_result["reason"]], strategy_type="naked_poc")
+                                                     0, [naked_result["reason"]], strategy_type="naked_poc") \
+                                if naked_portfolio_check["can_open"] else None
                     if naked_trade:
                         print(f"[{now_ist()}] {symbol}: NAKED-POC PAPER TRADE OPENED — entry={closes[-1]}, "
                               f"SL={naked_result['sl_price']}")
@@ -1036,10 +1060,20 @@ def run_once():
                 print(f"[{symbol}] Time-adjusted risk ({adjusted['time_window']}, {adjusted['multiplier_used']}x): "
                       f"SL={adjusted['sl_points']}, Target={adjusted['target_points']}")
 
+                # Portfolio Agent gate (added 21 Aug 2026, Saim's
+                # priority #2 of 5)
+                from portfolio_agent import check_can_open_new_position
+                from paper_trader import get_all_open_positions
+                main_portfolio_check = check_can_open_new_position(
+                    get_all_open_positions(), symbol, result["signal"], 1.5, 100000)
+                for reason in main_portfolio_check["reasons"]:
+                    print(f"[{now_ist()}] {symbol}: PORTFOLIO AGENT — {reason}")
+
                 pt_result = open_paper_trade(symbol, today, result["signal"], closes[-1],
                                               adjusted["sl_points"], adjusted["target_points"],
                                               result.get("layer_status", {}), result["score"], result["reasons"],
-                                              strategy_type=strategy_type, option_snapshot=option_snapshot, vix_level=_latest_vix)
+                                              strategy_type=strategy_type, option_snapshot=option_snapshot, vix_level=_latest_vix) \
+                            if main_portfolio_check["can_open"] else None
                 if pt_result is None:
                     print(f"[{now_ist()}] {symbol}: open_paper_trade() returned None — likely blocked "
                           f"(already an OPEN trade for {symbol}/{today} in paper_trades.jsonl)")

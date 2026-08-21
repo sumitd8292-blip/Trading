@@ -311,3 +311,32 @@ is a REAL, reproducible number for THIS specific dataset, but not
 directly comparable to the old unverifiable claim. Going forward, THIS
 harness run (logged as a proper baseline) is what future strategy
 changes get compared against — not the old, now-unreproducible number.
+
+## NEW: Risk Agent + Portfolio Agent (risk_agent.py, portfolio_agent.py, 21 Aug 2026)
+Per Saim's #2-of-5 sequential priority. Researched standard position-
+sizing methods (Fixed Fractional chosen — industry-standard 1-2%
+risk-per-trade, doesn't need reliable win-rate history unlike Kelly).
+
+**risk_agent.py**: compute_position_size() — num_lots = floor(risk_amount
+/ premium_risk_per_lot), where premium_risk_per_lot = index_SL_points *
+abs(Delta) * lot_size. 6 tests: manual math verification, BANKNIFTY lot
+size, tiny-capital edge case, zero-input edge cases, negative-Delta (PE
+options) handling, custom risk_pct.
+
+**portfolio_agent.py**: check_correlation_risk() (flags NIFTY+BANKNIFTY
+open in the SAME direction as concentrated risk, not diversification —
+both are correlated broad-India-index bets), check_can_open_new_position()
+(gatekeeper: max concurrent positions=2, max total capital-at-risk=2.5%
+across all open positions, correlation warning non-blocking). 6 tests:
+correlation detection both ways, single-position edge case, 3
+gatekeeper scenarios (block-on-max-positions, block-on-total-risk,
+allow-within-limits).
+
+Wired into ALL 3 continuous_runner.py trade-opening call sites (main
+RSI/Trend-Continuation, POC-Reaction responsive+initiative, Naked-POC)
+via a new paper_trader.get_all_open_positions() helper — every new
+trade now checks Portfolio Agent limits BEFORE opening, consistently
+across all 4 strategies (avoiding duplicated logic). Currently uses a
+default simulated ₹100,000 account capital (paper-trading — real
+capital tracking is a future step once live trading begins).
+15 total tests run before considering this item done.
