@@ -921,3 +921,29 @@ average gap % for CE/PE, up/down day counts).
 Wired into continuous_runner.py, positioned AFTER refresh_live_option_chain()
 so it always uses fresh (not stale/empty) cached option-chain data.
 Tested end-to-end with a simulated gap-down scenario (CE -60%, PE +89%).
+
+## Volume Profile / POC Tracker — Daily + Rolling Contract-Period (21 Aug 2026)
+Per Saim's design decision (and per Dhan's own confirmation that the
+rich "Order Flow" feature is UI-only, not API-accessible): built our
+own Volume Profile / POC directly from FUTURES candle data (real
+volume, already confirmed working since 18-19 Aug for the VSA layer) —
+no Order Flow API needed at all.
+
+volume_profile.py: compute_volume_profile() (buckets volume by price,
+finds POC + 70% Value Area), check_price_reaction_at_level() (tests
+whether a level acted as support/resistance afterward). VERIFIED against
+real 15-day NIFTY futures data (5-20 Aug): POC=24400, and price
+genuinely bounced off it repeatedly (12-14 Aug, +40 to +89pt reactions)
+before eventually breaking down through it decisively (17 Aug, -140 to
+-166pt continuation) — a textbook POC support-then-breakdown pattern.
+
+volume_profile_tracker.py: TWO tracked levels per Saim's explicit
+design — (1) DAILY POC (resets every day, primary actionable level),
+(2) ROLLING CONTRACT-PERIOD POC (accumulates across days, automatically
+RESETS on monthly futures contract rollover — both NIFTY and BANKNIFTY
+futures are monthly-only, confirmed 18-19 Aug, so both use the same
+rollover-aware logic, never mixing volume across different contracts).
+
+Wired into continuous_runner.py's EOD flow, fetching the day's full
+futures candle series once (no extra per-minute API calls). Tested
+end-to-end against real historical data.

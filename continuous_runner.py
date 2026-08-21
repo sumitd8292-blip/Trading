@@ -650,6 +650,30 @@ def run_once():
             except Exception as e:
                 print(f"[{now_ist()}] {symbol}: opening impact analysis failed (non-fatal) — {e}")
 
+            # Volume Profile / POC — daily + rolling contract-period
+            # (added 21 Aug 2026, per Saim's design decision: track both
+            # levels, using FUTURES candles (real volume, already
+            # confirmed working) — fetches the full day's futures data
+            # once at EOD, no extra per-minute API calls)
+            try:
+                from volume_profile_tracker import compute_and_store_daily_poc, update_rolling_contract_poc
+                futures_expiry_raw = get_monthly_expiry()
+                futures_expiry_fmt = datetime.strptime(futures_expiry_raw, "%Y-%m-%d").strftime("%d%b%y")
+                day_futures = fetch_candles(symbol, f"{today} 09:15:00",
+                                             now_ist().strftime("%Y-%m-%d %H:%M:%S"),
+                                             segment="FNO", interval_minutes=1, expiry=futures_expiry_fmt)
+                if day_futures:
+                    daily_poc = compute_and_store_daily_poc(symbol, today, day_futures)
+                    rolling_poc = update_rolling_contract_poc(symbol, today, day_futures, futures_expiry_raw)
+                    if daily_poc:
+                        print(f"[{now_ist()}] {symbol}: DAILY POC — {daily_poc['poc_price']} "
+                              f"(VA: {daily_poc['value_area_low']}-{daily_poc['value_area_high']})")
+                    if rolling_poc:
+                        print(f"[{now_ist()}] {symbol}: ROLLING CONTRACT POC ({rolling_poc['days_accumulated']} days) — "
+                              f"{rolling_poc['poc_price']} (VA: {rolling_poc['value_area_low']}-{rolling_poc['value_area_high']})")
+            except Exception as e:
+                print(f"[{now_ist()}] {symbol}: volume profile POC calculation failed (non-fatal) — {e}")
+
             # Footprint compress-and-cleanup (per Saim's 19 Aug agreement:
             # keep the compressed per-price-level summary PERMANENTLY —
             # it's what explains WHY a level is support/resistance — but
