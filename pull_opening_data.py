@@ -25,7 +25,10 @@ INSTRUMENTS = {
     "SENSEX": {"security_id": "51", "exchange_segment": "IDX_I"},  # BSE Sensex — verify if this fails
 }
 
-DAYS_BACK = 15
+DAYS_BACK = 60  # widened 22 Aug per Saim's request — need enough history to
+                 # see BOTH up-opening and down-opening periods, not just
+                 # the recent downtrend stretch (Dhan's intraday API has a
+                 # ~90-day max span limit per interval, per earlier research)
 
 
 def run():
