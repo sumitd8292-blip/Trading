@@ -355,3 +355,21 @@ known test-dataset OHLC limitation). Wired into continuous_runner.py's
 POC-reaction check — informational for now (logged + shown in Telegram
 alert), not yet gating the trade (observing before hard-gating, day 1
 of this integration).
+
+## BOX 15 COMPLETE (21 Aug 2026): Range-Breakout-from-Consolidation Detector
+Per Saim's #4-of-5 priority. Origin: 20 Aug's manual chart review found
+a genuine ~47pt NIFTY missed move (24,217→24,264, 12:40-12:50PM) that
+neither RSI-Reversal (needed prior oversold-recovery) nor Trend-
+Continuation (needed already-aligned momentum) could catch — a
+genuinely different pattern: sudden breakout FROM a tight consolidation.
+
+range_breakout.py: detect_consolidation() (is the recent N-candle range
+genuinely tight — "coiled spring" precondition) + detect_range_breakout()
+(has price now moved decisively beyond that range, filtering small
+noise-pokes via a confirmation-point buffer). 7 synthetic tests +
+**1 CRITICAL verification test: recreated Saim's EXACT documented 20
+Aug numbers (consolidation ~24,210-24,217, breakout to 24,264) —
+CONFIRMED this detector would have caught the exact move that started
+this whole investigation.** 5th independent entry strategy
+(strategy_type="range_breakout"), wired with edge-triggering, Portfolio
+Agent gate, Telegram alert — same rigor as Boxes 16/19.

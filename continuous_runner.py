@@ -259,6 +259,7 @@ _last_signal_state = {}  # symbol -> previous tick's signal, for edge-triggered 
 _last_data_sync_time = None  # when memory/data was last auto-pushed to GitHub
 _last_poc_signal_state = {}  # symbol -> previous tick's POC-strategy signal, edge-triggered separately
 _last_naked_poc_signal_state = {}  # symbol -> previous tick's naked-POC signal, edge-triggered separately
+_last_range_breakout_signal_state = {}  # symbol -> previous tick's range-breakout signal, edge-triggered separately
 _cached_naked_pocs = {}  # symbol -> list of naked POCs (refreshed once/day at EOD, used for live intraday checks)
 _latest_vix = None          # India VIX level, refreshed alongside option chain
 _latest_depth_imbalance = {}  # symbol -> order-book depth imbalance dict (real order flow, not OI)
@@ -1053,6 +1054,57 @@ def run_once():
                             print(f"[{now_ist()}] {symbol}: Naked-POC alert send failed (non-fatal) — {naked_alert_e}")
         except Exception as e:
             print(f"[{now_ist()}] {symbol}: Naked POC signal check failed (non-fatal) — {e}")
+
+        # Range-Breakout-from-Consolidation check (added 21 Aug 2026,
+        # Saim's priority #4 of 5, Box 15) — catches sudden breakouts
+        # from tight consolidation, the pattern type neither RSI-Reversal
+        # nor Trend-Continuation is designed to catch (origin: 20 Aug's
+        # manual chart review found a real ~47pt missed NIFTY move).
+        try:
+            from range_breakout import detect_consolidation, detect_range_breakout
+            recent_ohlc = [{"high": highs[j], "low": lows[j], "close": closes[j]} for j in range(max(0, len(closes) - 8), len(closes))]
+            consolidation = detect_consolidation(recent_ohlc, lookback=8)
+            breakout_result = detect_range_breakout(closes[-1], consolidation)
+            breakout_signal = breakout_result["signal"]
+
+            prev_breakout_signal = _last_range_breakout_signal_state.get(symbol, "NONE")
+            is_fresh_breakout_signal = breakout_signal != "NONE" and breakout_signal != prev_breakout_signal
+            _last_range_breakout_signal_state[symbol] = breakout_signal
+
+            if is_fresh_breakout_signal:
+                print(f"[{now_ist()}] {symbol}: RANGE-BREAKOUT SIGNAL — {breakout_signal}: {breakout_result['reason']}")
+
+                from portfolio_agent import check_can_open_new_position
+                from paper_trader import get_all_open_positions
+                breakout_portfolio_check = check_can_open_new_position(
+                    get_all_open_positions(), symbol, breakout_signal, 1.5, 100000)
+                for reason in breakout_portfolio_check["reasons"]:
+                    print(f"[{now_ist()}] {symbol}: PORTFOLIO AGENT — {reason}")
+
+                breakout_sl_points = consolidation["range_points"] + 5  # SL just beyond the broken range
+                breakout_trade = open_paper_trade(symbol, today, breakout_signal, closes[-1],
+                                                   breakout_sl_points, breakout_sl_points * 1.67,
+                                                   {"consolidation_range": breakout_result.get("breakout_range")},
+                                                   0, [breakout_result["reason"]], strategy_type="range_breakout") \
+                                  if breakout_portfolio_check["can_open"] else None
+                if breakout_trade:
+                    print(f"[{now_ist()}] {symbol}: RANGE-BREAKOUT PAPER TRADE OPENED — entry={closes[-1]}, "
+                          f"SL_points={breakout_sl_points}")
+                    try:
+                        breakout_msg = (
+                            f"<b>Order-Flow Agent Signal</b>\n"
+                            f"Symbol: {symbol}\n"
+                            f"Strategy: <b>range_breakout</b>\n"
+                            f"Signal: <b>{breakout_signal}</b>\n"
+                            f"Reason: {breakout_result['reason']}\n"
+                            f"SL: {breakout_sl_points} pts\n\n"
+                            f"⚠️ Alert-only. Manual confirmation required before entry."
+                        )
+                        send_telegram_message(breakout_msg)
+                    except Exception as breakout_alert_e:
+                        print(f"[{now_ist()}] {symbol}: Range-breakout alert send failed (non-fatal) — {breakout_alert_e}")
+        except Exception as e:
+            print(f"[{now_ist()}] {symbol}: Range-breakout check failed (non-fatal) — {e}")
 
         if is_fresh_signal:
             print(f"[{now_ist()}] {symbol}: FRESH SIGNAL detected — {result['signal']}, attempting to open paper trade...")
