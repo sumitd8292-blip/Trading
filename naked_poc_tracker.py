@@ -114,3 +114,53 @@ def check_naked_poc_proximity(current_price, naked_pocs, proximity_tolerance=20)
             nearby.append({**poc, "distance": round(distance, 1),
                             "approach_direction": "FROM_ABOVE" if distance > 0 else "FROM_BELOW"})
     return nearby
+
+
+def check_naked_poc_signal(current_price, prev_candles, naked_pocs, trade_mode="RESPONSIVE",
+                            proximity_tolerance=20, reaction_confirmation_points=8):
+    """
+    THE TRADING-SIGNAL VERSION (21 Aug 2026) — combines all 3 use-cases
+    from research into one function:
+    1. ENTRY ZONE: price testing a naked POC for the first time -> uses
+       the SAME reaction-confirmation logic as poc_reaction_strategy
+       (RESPONSIVE mode = bounce; INITIATIVE mode = breakdown-continuation),
+       applied against the NEAREST naked POC instead of the rolling POC.
+    2. BREAKDOWN: handled automatically by passing trade_mode="INITIATIVE"
+       when Initial-Balance-breakout or day-imbalance conditions apply
+       (reuses poc_reaction_strategy.determine_trade_mode()'s decision).
+    3. TARGET: naked POCs beyond the nearest one are returned as
+       suggested_targets — for OTHER strategies (RSI-reversal, trend-
+       continuation, POC-reaction) to optionally use as a more
+       informed take-profit than a fixed point-distance, since a target
+       landing exactly on a naked POC has real statistical backing
+       (~80% revisit rate) rather than being an arbitrary number.
+
+    Returns {"signal": "LONG"/"SHORT"/"NONE", "reason": str,
+    "sl_price": float, "naked_poc_used": float,
+    "suggested_targets": [list of further naked POC prices in the
+    trade's direction, nearest first]}
+    """
+    from poc_reaction_strategy import check_poc_reaction_signal_v2
+
+    nearby = check_naked_poc_proximity(current_price, naked_pocs, proximity_tolerance)
+    if not nearby:
+        return {"signal": "NONE", "reason": "no naked POC nearby", "suggested_targets": []}
+
+    # Use the nearest naked POC as the primary level to test
+    nearest = min(nearby, key=lambda n: abs(n["distance"]))
+    result = check_poc_reaction_signal_v2(current_price, prev_candles, nearest["poc_price"], trade_mode,
+                                           approach_tolerance=proximity_tolerance,
+                                           reaction_confirmation_points=reaction_confirmation_points)
+
+    if result["signal"] == "NONE":
+        return {**result, "suggested_targets": []}
+
+    # Suggested targets: other naked POCs further in the trade's direction
+    direction_sign = 1 if result["signal"] == "LONG" else -1
+    targets = sorted(
+        [n["poc_price"] for n in naked_pocs
+         if (n["poc_price"] - current_price) * direction_sign > 0 and n["poc_price"] != nearest["poc_price"]],
+        key=lambda p: abs(p - current_price)
+    )
+
+    return {**result, "naked_poc_used": nearest["poc_price"], "suggested_targets": targets[:2]}

@@ -269,3 +269,18 @@ under what conditions).
 - **Status**: LIVE (computed daily in continuous_runner.py's EOD flow,
   printed for visibility) — NOT yet wired as an active trading signal
   (currently observational, printing top-3 naked POCs by age each day).
+
+## BOX 19 UPDATE (21 Aug 2026): Full Trading-Signal Integration Live
+Per Saim's "kar do ise" (do it) — naked POC is now a full 4th entry
+strategy (alongside RSI-Reversal, Trend-Continuation, POC-Reaction):
+check_naked_poc_signal() combines all 3 research use-cases —
+ENTRY-ZONE reaction (mode-aware, reuses check_poc_reaction_signal_v2),
+BREAKDOWN continuation (via the same Initiative/Responsive trade_mode),
+and TARGET suggestion (further naked POCs in the trade direction,
+returned as suggested_targets — a statistically-grounded take-profit
+option, ~80% historical revisit rate, vs an arbitrary fixed distance).
+5 test scenarios (RESPONSIVE bounce, INITIATIVE breakdown, no-nearby-POC
+edge case, target-suggestion correctness) all passed before wiring live.
+strategy_type="naked_poc" for independent win-rate tracking. Wired with
+its own edge-triggered signal state, Telegram alert, and paper-trade
+opening — parallel to (not replacing) the rolling-POC reaction strategy.

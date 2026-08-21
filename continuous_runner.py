@@ -258,6 +258,8 @@ def refresh_multi_timeframe_context(symbol):
 _last_signal_state = {}  # symbol -> previous tick's signal, for edge-triggered entry detection
 _last_data_sync_time = None  # when memory/data was last auto-pushed to GitHub
 _last_poc_signal_state = {}  # symbol -> previous tick's POC-strategy signal, edge-triggered separately
+_last_naked_poc_signal_state = {}  # symbol -> previous tick's naked-POC signal, edge-triggered separately
+_cached_naked_pocs = {}  # symbol -> list of naked POCs (refreshed once/day at EOD, used for live intraday checks)
 _latest_vix = None          # India VIX level, refreshed alongside option chain
 _latest_depth_imbalance = {}  # symbol -> order-book depth imbalance dict (real order flow, not OI)
 
@@ -715,6 +717,7 @@ def run_once():
                         log_day_range(symbol, today, day_high, day_low)
                         day_ranges = load_day_ranges(symbol)
                         naked_pocs = get_naked_pocs(symbol, today, day_ranges)
+                        _cached_naked_pocs[symbol] = naked_pocs  # cache for live intraday checks
                         if naked_pocs:
                             top3 = naked_pocs[:3]
                             print(f"[{now_ist()}] {symbol}: NAKED POCs (top 3 by age) — " +
@@ -952,6 +955,56 @@ def run_once():
                             print(f"[{now_ist()}] {symbol}: POC alert send failed (non-fatal) — {alert_e}")
         except Exception as e:
             print(f"[{now_ist()}] {symbol}: POC reaction strategy check failed (non-fatal) — {e}")
+
+        # Naked POC live trading-signal check (added 21 Aug 2026, per
+        # Saim's "go ahead and implement it" — reuses the cached naked-
+        # POC list computed at EOD, checks it every tick like the
+        # rolling-POC reaction check above. All 3 use-cases from
+        # research: entry-zone (bounce/breakdown reaction, mode-aware)
+        # + target-suggestion (further naked POCs in trade direction).
+        try:
+            from naked_poc_tracker import check_naked_poc_signal
+            cached_naked_pocs = _cached_naked_pocs.get(symbol, [])
+            if cached_naked_pocs and len(closes) >= 6:
+                recent_candles = [{"close": c} for c in closes[-6:]]
+                # reuse the same trade_mode computed above for POC-reaction
+                naked_result = check_naked_poc_signal(closes[-1], recent_candles, cached_naked_pocs,
+                                                        trade_mode=trade_mode if 'trade_mode' in dir() else "RESPONSIVE")
+                naked_signal = naked_result["signal"]
+
+                prev_naked_signal = _last_naked_poc_signal_state.get(symbol, "NONE")
+                is_fresh_naked_signal = naked_signal != "NONE" and naked_signal != prev_naked_signal
+                _last_naked_poc_signal_state[symbol] = naked_signal
+
+                if is_fresh_naked_signal:
+                    print(f"[{now_ist()}] {symbol}: NAKED POC SIGNAL — {naked_signal}: {naked_result['reason']}, "
+                          f"targets={naked_result.get('suggested_targets', [])}")
+                    naked_sl_points = abs(closes[-1] - naked_result["sl_price"])
+                    naked_trade = open_paper_trade(symbol, today, naked_signal, closes[-1],
+                                                     naked_sl_points, naked_sl_points * 2,
+                                                     {"naked_poc_reference": naked_result["naked_poc_used"],
+                                                      "suggested_targets": naked_result.get("suggested_targets", [])},
+                                                     0, [naked_result["reason"]], strategy_type="naked_poc")
+                    if naked_trade:
+                        print(f"[{now_ist()}] {symbol}: NAKED-POC PAPER TRADE OPENED — entry={closes[-1]}, "
+                              f"SL={naked_result['sl_price']}")
+                        try:
+                            naked_msg = (
+                                f"<b>Order-Flow Agent Signal</b>\n"
+                                f"Symbol: {symbol}\n"
+                                f"Strategy: <b>naked_poc</b>\n"
+                                f"Signal: <b>{naked_signal}</b>\n"
+                                f"Naked POC: {naked_result['naked_poc_used']}\n"
+                                f"Reason: {naked_result['reason']}\n"
+                                f"Suggested Targets (further naked POCs): {naked_result.get('suggested_targets', [])}\n"
+                                f"SL: {naked_result['sl_price']}\n\n"
+                                f"⚠️ Alert-only. Manual confirmation required before entry."
+                            )
+                            send_telegram_message(naked_msg)
+                        except Exception as naked_alert_e:
+                            print(f"[{now_ist()}] {symbol}: Naked-POC alert send failed (non-fatal) — {naked_alert_e}")
+        except Exception as e:
+            print(f"[{now_ist()}] {symbol}: Naked POC signal check failed (non-fatal) — {e}")
 
         if is_fresh_signal:
             print(f"[{now_ist()}] {symbol}: FRESH SIGNAL detected — {result['signal']}, attempting to open paper trade...")
