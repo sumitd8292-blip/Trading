@@ -904,3 +904,20 @@ competitor" comparison, not just an average), computing whether opening
 actually wins and by what ratio. review_opening_impact_stats() reports
 the accumulated hit-rate across tracked days. Wired into
 continuous_runner.py's end-of-day flow, tested end-to-end.
+
+## Option Premium Overnight-Gap Tracker (21 Aug 2026)
+Per Saim's request: beyond the index-level GIFT-NIFTY-based gap check
+(pre_open_signal_tracker.py), also track the actual ATM strike's Call
+and Put premium move from yesterday's close to today's open — the
+directly tradeable number, since option premiums move by different
+percentages than the index (Delta/Gamma effects), not the same points.
+
+option_premium_gap_tracker.py: log_eod_atm_snapshot() (called ~3:25-3:32
+PM, captures ATM strike + CE/PE LTP), check_next_day_open() (called
+~9:00-9:20 AM next session, captures same strike's CE/PE now, computes
+the gap in both points and %), review_option_gap_stats() (accumulated
+average gap % for CE/PE, up/down day counts).
+
+Wired into continuous_runner.py, positioned AFTER refresh_live_option_chain()
+so it always uses fresh (not stale/empty) cached option-chain data.
+Tested end-to-end with a simulated gap-down scenario (CE -60%, PE +89%).

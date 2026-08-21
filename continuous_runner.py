@@ -79,6 +79,79 @@ _mtf_context = {}  # symbol -> multi-timeframe (daily/1H) trend context, refresh
 _mtf_last_refresh_date = {}  # symbol -> date MTF context was last fetched (once/day is enough)
 _pre_open_signal_logged_date = None  # date the pre-open signal was already logged today
 _pre_open_signal_checked_date = None  # date the actual-move check was already done today
+_option_gap_eod_logged_date = None  # date the EOD ATM-strike premium snapshot was logged
+_option_gap_open_checked_date = None  # date the next-day-open premium check was done
+
+
+def _get_atm_ce_pe_ltp(symbol):
+    """Helper: finds the ATM strike's CE/PE LTP + spot from the cached
+    live option chain (already fetched by refresh_live_option_chain()).
+    Returns (strike, ce_ltp, pe_ltp, spot) or None if unavailable."""
+    chain_data = _latest_option_rows.get(symbol)
+    if not chain_data:
+        return None
+    rows, spot = chain_data
+    atm_row = min(rows, key=lambda r: abs(r["strike"] - spot))
+    if not atm_row.get("call") or not atm_row.get("put"):
+        return None
+    ce_ltp = atm_row["call"].get("ltp")
+    pe_ltp = atm_row["put"].get("ltp")
+    if ce_ltp is None or pe_ltp is None:
+        return None
+    return atm_row["strike"], ce_ltp, pe_ltp, spot
+
+
+def check_eod_option_snapshot(symbol):
+    """
+    Runs once daily around 3:25-3:28 PM: captures the ATM strike's CE/PE
+    premium as the "yesterday's close" reference for tomorrow's gap
+    check — per Saim's 21 Aug request to track option premium moves
+    overnight, not just index points.
+    """
+    global _option_gap_eod_logged_date
+    today_str = now_ist().strftime("%Y-%m-%d")
+    if _option_gap_eod_logged_date == today_str:
+        return
+    try:
+        from option_premium_gap_tracker import log_eod_atm_snapshot
+        result = _get_atm_ce_pe_ltp(symbol)
+        if not result:
+            return
+        strike, ce_ltp, pe_ltp, spot = result
+        log_eod_atm_snapshot(symbol, today_str, strike, ce_ltp, pe_ltp, spot, now_ist().isoformat())
+        print(f"[{now_ist()}] {symbol}: EOD option snapshot logged — strike={strike}, CE={ce_ltp}, PE={pe_ltp}")
+        _option_gap_eod_logged_date = today_str
+    except Exception as e:
+        print(f"[{now_ist()}] {symbol}: EOD option snapshot failed (non-fatal) — {e}")
+
+
+def check_next_day_option_gap(symbol):
+    """
+    Runs once daily around 9:17-9:20 AM: captures the SAME ATM strike's
+    CE/PE premium now, compares against yesterday's EOD snapshot.
+    """
+    global _option_gap_open_checked_date
+    today_str = now_ist().strftime("%Y-%m-%d")
+    if _option_gap_open_checked_date == today_str:
+        return
+    try:
+        from option_premium_gap_tracker import check_next_day_open
+        from datetime import timedelta
+        yesterday_str = (now_ist().date() - timedelta(days=1)).isoformat()
+        # also try 3 days back in case of a weekend gap
+        result = _get_atm_ce_pe_ltp(symbol)
+        if not result:
+            return
+        strike, ce_ltp, pe_ltp, spot = result
+        for prev_date in [yesterday_str, (now_ist().date() - timedelta(days=3)).isoformat()]:
+            closed = check_next_day_open(symbol, prev_date, today_str, ce_ltp, pe_ltp, spot, now_ist().isoformat())
+            if closed:
+                print(f"[{now_ist()}] {symbol}: OPTION PREMIUM GAP — CE {closed['ce_gap_points']:+.1f}pts "
+                      f"({closed['ce_gap_pct']:+.1f}%), PE {closed['pe_gap_points']:+.1f}pts ({closed['pe_gap_pct']:+.1f}%)")
+                break
+        _option_gap_open_checked_date = today_str
+    except Exception as e:
+        print(f"[{now_ist()}] {symbol}: next-day option gap check failed (non-fatal) — {e}")
 
 
 def check_pre_open_signal():
@@ -432,13 +505,7 @@ def run_once():
     today = now_ist().strftime("%Y-%m-%d")
     alerted = _load_alerted()
 
-    # Pre-open signal check (added 21 Aug 2026, Saim's request): runs
-    # once daily right before continuous trading fully starts, logging
-    # GIFT NIFTY's implied gap direction for later comparison against
-    # the actual opening move.
     now_t = now_ist().time()
-    if dtime(9, 0) <= now_t <= dtime(9, 20):
-        check_pre_open_signal()
 
     # Refresh live option chain (OI/PCR + Gamma Exposure) and VIX every N loops
     if _option_chain_loop_counter % OPTION_CHAIN_REFRESH_LOOPS == 0:
@@ -465,6 +532,16 @@ def run_once():
         # timeframe, paper trading) confirmed healthy and unaffected.
         # refresh_order_flow_depth()
     _option_chain_loop_counter += 1
+
+    # Pre-open / EOD option-premium-gap checks (added 21 Aug 2026, moved
+    # here to run AFTER refresh_live_option_chain() so they always use
+    # fresh same-cycle option-chain data, not a stale/empty prior cycle)
+    if dtime(9, 0) <= now_t <= dtime(9, 20):
+        check_pre_open_signal()
+        check_next_day_option_gap("NIFTY")
+
+    if dtime(15, 25) <= now_t <= dtime(15, 32):
+        check_eod_option_snapshot("NIFTY")
 
     for symbol in SYMBOLS:
         try:
