@@ -58,7 +58,13 @@ from smc import find_recent_fvgs
 from footprint_proxy import classify_trade_aggression, record_footprint_sample, get_footprint_summary, check_trend_footprint_shift
 
 LOOP_INTERVAL_SECONDS = 60  # 1-minute granularity
-MARKET_OPEN = dtime(9, 12)
+MARKET_OPEN = dtime(9, 0)  # CHANGED 21 Aug 2026 per Saim's request — start data
+                            # collection from 9:00 (NSE pre-open session start),
+                            # not 9:12, since orders genuinely get punched during
+                            # the 9:00-9:15 pre-open window (order collection
+                            # 9:00-9:08, price discovery/matching 9:08-9:12,
+                            # buffer 9:12-9:15) and this activity is valuable
+                            # data for a future pre-market/pre-order strategy.
 MARKET_CLOSE = dtime(15, 40)
 SYMBOLS = ["NIFTY", "BANKNIFTY"]
 OPTION_CHAIN_REFRESH_LOOPS = 3  # fetch live option chain/VIX/depth every 3 loops (~3 min), not every 1 min — it's a heavier call

@@ -849,3 +849,16 @@ signal" — this was a real bug, not the agent being inconsistent/dumb.
 Fixed: alerts now also gate on is_fresh_signal (direction transition
 only), matching paper-trading's logic exactly — one alert per genuine
 signal, not per score wobble.
+
+## Market-Open Time Changed to 9:00 AM (21 Aug 2026)
+Per Saim's request: MARKET_OPEN changed from 9:12 to 9:00, so the agent
+starts running (and thus fetching live quote/depth data via order-flow-
+depth and footprint sampling) from 9:00 AM — capturing NSE's pre-open
+session activity (order collection 9:00-9:08, price discovery/matching
+9:08-9:12, buffer 9:12-9:15) since real orders genuinely get punched
+during this window. Saim's stated reason: this is valuable data for a
+future pre-market/pre-order-based strategy. Note: main price-candle
+fetches still anchor their start to 9:15 (min(9:15, now) clamp) since
+regular continuous-session candle data begins there — only the LIVE
+snapshot-based fetches (option chain, depth, quotes) now genuinely
+start 15 min earlier.
