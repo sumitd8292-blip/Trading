@@ -151,3 +151,21 @@ was a genuine BUG (alert-dedup vs paper-trade-dedup used different
 rules) — fixed 20 Aug, see git log. Not the agent being inconsistent —
 two different pieces of code disagreeing about what counts as "a new
 signal."
+
+## BOX 16: POC-Reaction Strategy (entry strategy, added 21 Aug 2026)
+- **Timeframe**: 1-min live signal, tests price against rolling contract-period POC
+- **Data needed**: futures candles+volume (have this, live) → volume_profile_tracker.py's POC
+- **Backtestable now?**: YES — tested against 12-17 Aug real data. Edge-triggered:
+  18 signals over 6 days (vs 39 before edge-triggering fix). Correctly generated
+  3 LONG-bounce signals on 17 Aug's morning/midday (genuine short-term bounces),
+  which the built-in fail-safe SL (placed just beyond POC, not a fixed point
+  distance) would have caught when the level finally broke down decisively
+  that afternoon (-140 to -166pt continuation).
+- **Design principle (direct answer to "what happens if the strategy is wrong")**:
+  SL sits just beyond the POC level itself. A loss on this strategy specifically
+  means "the level failed" — which per the 17 Aug data is exactly when a large
+  continuation move tends to follow, so the SL naturally limits exposure right
+  at the point the core assumption breaks, rather than fighting a breakdown.
+- **Status**: LIVE, tagged as strategy_type="poc_reaction" — independent of
+  RSI-Reversal/Trend-Continuation (Boxes 1-2), tracked separately in
+  learning_loop so its own win-rate can be judged on its own merits.

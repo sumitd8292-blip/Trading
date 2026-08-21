@@ -256,6 +256,7 @@ def refresh_multi_timeframe_context(symbol):
     except Exception as e:
         print(f"[{now_ist()}] {symbol}: multi-timeframe context fetch failed (non-fatal) — {e}")
 _last_signal_state = {}  # symbol -> previous tick's signal, for edge-triggered entry detection
+_last_poc_signal_state = {}  # symbol -> previous tick's POC-strategy signal, edge-triggered separately
 _latest_vix = None          # India VIX level, refreshed alongside option chain
 _latest_depth_imbalance = {}  # symbol -> order-book depth imbalance dict (real order flow, not OI)
 
@@ -806,6 +807,38 @@ def run_once():
         prev_signal = _last_signal_state.get(symbol, "NONE")
         is_fresh_signal = result["signal"] != "NONE" and result["signal"] != prev_signal
         _last_signal_state[symbol] = result["signal"]
+
+        # POC-Reaction strategy check (added 21 Aug 2026) — THIRD,
+        # independent entry strategy alongside RSI-Reversal and
+        # Trend-Continuation. Uses the rolling contract-period POC
+        # (clearer multi-day support/resistance signal per 12-17 Aug
+        # verification). Edge-triggered from the start (built correctly
+        # this time, avoiding the level-triggered bug found 20 Aug).
+        try:
+            from poc_reaction_strategy import check_poc_reaction_signal
+            from volume_profile_tracker import get_current_rolling_poc
+            rolling_poc = get_current_rolling_poc(symbol)
+            if rolling_poc and len(closes) >= 6:
+                recent_candles = [{"close": c} for c in closes[-6:]]
+                poc_result = check_poc_reaction_signal(closes[-1], recent_candles, rolling_poc["poc_price"])
+                poc_signal = poc_result["signal"]
+
+                prev_poc_signal = _last_poc_signal_state.get(symbol, "NONE")
+                is_fresh_poc_signal = poc_signal != "NONE" and poc_signal != prev_poc_signal
+                _last_poc_signal_state[symbol] = poc_signal
+
+                if is_fresh_poc_signal:
+                    print(f"[{now_ist()}] {symbol}: POC SIGNAL — {poc_signal}: {poc_result['reason']}, "
+                          f"SL={poc_result['sl_price']}")
+                    poc_sl_points = abs(closes[-1] - poc_result["sl_price"])
+                    poc_trade = open_paper_trade(symbol, today, poc_signal, closes[-1],
+                                                  poc_sl_points, poc_sl_points * 2,
+                                                  {"poc_reference": poc_result["poc_reference"]}, 0,
+                                                  [poc_result["reason"]], strategy_type="poc_reaction")
+                    if poc_trade:
+                        print(f"[{now_ist()}] {symbol}: POC PAPER TRADE OPENED — entry={closes[-1]}, SL={poc_result['sl_price']}")
+        except Exception as e:
+            print(f"[{now_ist()}] {symbol}: POC reaction strategy check failed (non-fatal) — {e}")
 
         if is_fresh_signal:
             print(f"[{now_ist()}] {symbol}: FRESH SIGNAL detected — {result['signal']}, attempting to open paper trade...")

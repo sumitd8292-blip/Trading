@@ -21,8 +21,27 @@ from telegram_notify import send_telegram_message
 
 def build_daily_summary(date_str):
     trades = [t for t in read_paper_trades() if t["date"] == date_str]
+
+    # Volume Profile / POC summary (added 21 Aug 2026) — shown regardless
+    # of whether any trades happened, since this is standalone useful data
+    poc_lines = []
+    try:
+        from volume_profile_tracker import get_latest_daily_poc, get_current_rolling_poc
+        for symbol in ["NIFTY", "BANKNIFTY"]:
+            daily = get_latest_daily_poc(symbol)
+            rolling = get_current_rolling_poc(symbol)
+            if daily and daily["date"] == date_str:
+                poc_lines.append(f"{symbol} Daily POC: {daily['poc_price']} (VA {daily['value_area_low']}-{daily['value_area_high']})")
+            if rolling:
+                poc_lines.append(f"{symbol} Contract POC: {rolling['poc_price']} (VA {rolling['value_area_low']}-{rolling['value_area_high']}, since {rolling['period_start']})")
+    except Exception:
+        pass
+
     if not trades:
-        return f"<b>Paper Trade Summary — {date_str}</b>\n\nNo paper trades opened this day."
+        msg = f"<b>Paper Trade Summary — {date_str}</b>\n\nNo paper trades opened this day."
+        if poc_lines:
+            msg += "\n\n<b>Volume Profile:</b>\n" + "\n".join(poc_lines)
+        return msg
 
     lines = [f"<b>Paper Trade Summary — {date_str}</b>", ""]
 
@@ -56,6 +75,11 @@ def build_daily_summary(date_str):
         lines.append(f"Net index points: {net_pts:+.1f}")
         if net_prem:
             lines.append(f"Net estimated premium: {net_prem:+.1f}")
+
+    if poc_lines:
+        lines.append("")
+        lines.append("<b>Volume Profile:</b>")
+        lines.extend(poc_lines)
 
     return "\n".join(lines)
 
