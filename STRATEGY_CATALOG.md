@@ -284,3 +284,30 @@ edge case, target-suggestion correctness) all passed before wiring live.
 strategy_type="naked_poc" for independent win-rate tracking. Wired with
 its own edge-triggered signal state, Telegram alert, and paper-trade
 opening — parallel to (not replacing) the rolling-POC reaction strategy.
+
+## NEW: Systematic Backtest Harness (backtest_harness.py, 21 Aug 2026)
+Per Saim's #1-of-5 sequential priority — the biggest structural gap
+identified 20 Aug. run_harness() replays a FIXED dataset candle-by-candle
+through the REAL, CURRENT engine.score_setup() (no reimplementation —
+genuinely reflects live strategy code), no-lookahead (only past-visible
+data at each point), edge-triggered entry (matches live logic), EOD
+force-close (bug found+fixed during testing — without this, trades
+carried across overnight gaps unrealistically, inflating trade-count
+from documented ~1.5/day to 3/day). log_harness_run() saves before/after
+comparable summaries.
+
+8 tests run before considering this done: syntax, basic execution, a
+real bug found via manual trade-trace (EOD carry-over) and fixed,
+re-verification, determinism (2 identical runs), dataset-sensitivity
+(5-min vs 15-min timeframe genuinely different results, as expected),
+tiny-dataset edge case (fails gracefully), and the logging mechanism.
+
+**HONEST FINDING**: the original "42.9% WR / 90-day backtest" baseline
+CANNOT be reproduced — its source dataset (nifty_5min_90d.json) was
+never committed to git (.gitignore excluded it, size reasons) and no
+longer exists anywhere accessible. Current harness result on the
+available 15-day Aug 2026 dataset: 29 trades, 31.0% WR, -76pts — this
+is a REAL, reproducible number for THIS specific dataset, but not
+directly comparable to the old unverifiable claim. Going forward, THIS
+harness run (logged as a proper baseline) is what future strategy
+changes get compared against — not the old, now-unreproducible number.
