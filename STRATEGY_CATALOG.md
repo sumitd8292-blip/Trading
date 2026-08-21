@@ -242,3 +242,30 @@ or "poc_reaction_initiative" — so their win-rates can be tracked and
 compared SEPARATELY once enough trades accumulate (a genuinely testable
 question: does Initiative-mode or Responsive-mode perform better, and
 under what conditions).
+
+## BOX 19: Naked POC Tracker (added 21 Aug 2026)
+- **Origin**: per Saim's instruction to research Naked POC theory in depth
+  first, then implement carefully. Verified from multiple sources: a Naked
+  POC (virgin POC/NPOC) is a prior session's Point of Control price has
+  NOT traded back through since — ~80% get revisited within 10 sessions
+  (the "magnet effect" — unresolved institutional interest at that price).
+- **What it does**: get_naked_pocs() scans all historical daily POCs
+  (from volume_profile_tracker's log), checks each against ALL subsequent
+  days' high/low ranges (via a lightweight day_range_log.jsonl, avoiding
+  re-fetching historical candles) to determine which remain unretested.
+  Sorted by sessions_unvisited (longer unvisited = stronger pull per theory).
+  check_naked_poc_proximity() flags when current price is near one.
+- **Three use-cases from research (documented, not all wired as trading
+  signals yet)**: (1) TARGET — nearby naked POC in trade direction as
+  take-profit, (2) ENTRY ZONE — first test often gets a sharp reaction
+  (SL beyond level), (3) BREAKDOWN — if it fails to hold, trade the
+  continuation (reuses our Initiative/Responsive framework from Box 16).
+- **Tested (3 scenarios)**: synthetic naked/tested classification,
+  proximity detection, end-to-end with log_day_range/load_day_ranges
+  helpers — all passed. Verified against real 12-day NIFTY data:
+  correctly identified early-August POCs (24720, 24660, from before the
+  known price decline) as still naked, consistent with the well-established
+  downtrend pattern.
+- **Status**: LIVE (computed daily in continuous_runner.py's EOD flow,
+  printed for visibility) — NOT yet wired as an active trading signal
+  (currently observational, printing top-3 naked POCs by age each day).

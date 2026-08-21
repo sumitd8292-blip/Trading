@@ -703,6 +703,24 @@ def run_once():
                     if rolling_poc:
                         print(f"[{now_ist()}] {symbol}: ROLLING CONTRACT POC ({rolling_poc['days_accumulated']} days) — "
                               f"{rolling_poc['poc_price']} (VA: {rolling_poc['value_area_low']}-{rolling_poc['value_area_high']})")
+
+                    # Naked POC tracking (added 21 Aug 2026, per Saim's
+                    # research-then-implement instruction) — checks which
+                    # prior daily POCs remain unretested (potential
+                    # "magnet" levels per Market Profile theory)
+                    try:
+                        from naked_poc_tracker import get_naked_pocs, log_day_range, load_day_ranges
+                        day_high = max(c["close"] for c in day_futures)
+                        day_low = min(c["close"] for c in day_futures)
+                        log_day_range(symbol, today, day_high, day_low)
+                        day_ranges = load_day_ranges(symbol)
+                        naked_pocs = get_naked_pocs(symbol, today, day_ranges)
+                        if naked_pocs:
+                            top3 = naked_pocs[:3]
+                            print(f"[{now_ist()}] {symbol}: NAKED POCs (top 3 by age) — " +
+                                  ", ".join(f"{n['poc_price']}({n['sessions_unvisited']}d)" for n in top3))
+                    except Exception as naked_e:
+                        print(f"[{now_ist()}] {symbol}: naked POC tracking failed (non-fatal) — {naked_e}")
             except Exception as e:
                 print(f"[{now_ist()}] {symbol}: volume profile POC calculation failed (non-fatal) — {e}")
 
