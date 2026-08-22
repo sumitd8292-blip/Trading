@@ -260,6 +260,7 @@ _last_data_sync_time = None  # when memory/data was last auto-pushed to GitHub
 _last_poc_signal_state = {}  # symbol -> previous tick's POC-strategy signal, edge-triggered separately
 _last_naked_poc_signal_state = {}  # symbol -> previous tick's naked-POC signal, edge-triggered separately
 _last_range_breakout_signal_state = {}  # symbol -> previous tick's range-breakout signal, edge-triggered separately
+_gamma_opening_signaled_today = {}  # symbol -> date, tracks once-per-day gamma-opening signal check
 _cached_naked_pocs = {}  # symbol -> list of naked POCs (refreshed once/day at EOD, used for live intraday checks)
 _latest_vix = None          # India VIX level, refreshed alongside option chain
 _latest_depth_imbalance = {}  # symbol -> order-book depth imbalance dict (real order flow, not OI)
@@ -558,6 +559,54 @@ def run_once():
     if dtime(9, 0) <= now_t <= dtime(9, 20):
         check_pre_open_signal()
         check_next_day_option_gap("NIFTY")
+
+    # Gamma-Opening Strategy check (Box 20, added 22 Aug 2026) — runs
+    # once daily right after the 09:15 candle completes (09:16-09:19
+    # window gives a small buffer for the candle to be fully available)
+    if dtime(9, 16) <= now_t <= dtime(9, 19):
+        for symbol in ["NIFTY", "BANKNIFTY"]:
+            if _gamma_opening_signaled_today.get(symbol) == today:
+                continue
+            try:
+                from gamma_opening_strategy import check_gamma_opening_signal
+                gex = _latest_live_gex.get(symbol)
+                gex_regime = gex.get("regime") if gex else None
+                # Fetch just the 09:15 candle directly (small, targeted call)
+                first_candle_data = fetch_candles(symbol, f"{today} 09:15:00", f"{today} 09:16:00",
+                                                   interval_minutes=1)
+                if first_candle_data and gex_regime:
+                    first_candle = first_candle_data[0]
+                    gamma_result = check_gamma_opening_signal(symbol, first_candle, gex_regime, None)
+                    print(f"[{now_ist()}] {symbol}: GAMMA-OPENING CHECK — {gamma_result['reason']}")
+                    if gamma_result["signal"] != "NONE":
+                        from portfolio_agent import check_can_open_new_position
+                        gamma_portfolio_check = check_can_open_new_position(
+                            get_all_open_positions(), symbol, gamma_result["signal"], 1.5, 100000)
+                        if gamma_portfolio_check["can_open"]:
+                            gamma_trade = open_paper_trade(symbol, today, gamma_result["signal"], first_candle["close"],
+                                                            gamma_result["sl_points"], gamma_result["target_points"],
+                                                            {"gex_regime": gex_regime}, 0, [gamma_result["reason"]],
+                                                            strategy_type="gamma_opening")
+                            if gamma_trade:
+                                print(f"[{now_ist()}] {symbol}: GAMMA-OPENING PAPER TRADE OPENED — "
+                                      f"entry={first_candle['close']}, target={gamma_result['target_points']}pts")
+                                try:
+                                    gamma_msg = (
+                                        f"<b>Order-Flow Agent Signal</b>\nSymbol: {symbol}\n"
+                                        f"Strategy: <b>gamma_opening</b>\nSignal: <b>{gamma_result['signal']}</b>\n"
+                                        f"Reason: {gamma_result['reason']}\n"
+                                        f"Target: {gamma_result['target_points']}pts | SL: {gamma_result['sl_points']}pts\n\n"
+                                        f"⚠️ Alert-only. Manual confirmation required before entry."
+                                    )
+                                    send_telegram_message(gamma_msg)
+                                except Exception as gamma_alert_e:
+                                    print(f"[{now_ist()}] {symbol}: gamma-opening alert failed (non-fatal) — {gamma_alert_e}")
+                        else:
+                            for reason in gamma_portfolio_check["reasons"]:
+                                print(f"[{now_ist()}] {symbol}: PORTFOLIO AGENT — {reason}")
+                    _gamma_opening_signaled_today[symbol] = today
+            except Exception as e:
+                print(f"[{now_ist()}] {symbol}: gamma-opening check failed (non-fatal) — {e}")
 
     if dtime(15, 25) <= now_t <= dtime(15, 32):
         check_eod_option_snapshot("NIFTY")

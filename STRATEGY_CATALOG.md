@@ -373,3 +373,23 @@ CONFIRMED this detector would have caught the exact move that started
 this whole investigation.** 5th independent entry strategy
 (strategy_type="range_breakout"), wired with edge-triggering, Portfolio
 Agent gate, Telegram alert — same rigor as Boxes 16/19.
+
+## BOX 20: Gamma-Opening Strategy (6th entry strategy, added 22 Aug 2026)
+- **Origin**: extensively cross-validated research this session — 8 instruments
+  (NIFTY, BANKNIFTY, SENSEX + top-5 NIFTY stocks), 43 days each, ALL showing
+  the identical structural pattern: morning-dominant, 09:15's first minute
+  captures ~2/3 of the entire 5-minute opening window's total movement.
+- **What it does**: combines the VERIFIED first-minute-dominance timing with
+  EXISTING live GEX regime detection (ACCELERATION=amplifying vs
+  PINNING=dampening). Only fires on ACCELERATION days with a clear directional
+  first candle (>3pt move, filters flat/indecisive opens). Target = the
+  VERIFIED historical average first-minute move for that specific instrument
+  (NIFTY=26.7pts, BANKNIFTY=105.1pts) — NOT a guessed fixed number, per
+  Saim's explicit rejection of arbitrary targets. SL = half the target.
+- **Tested**: 6 scenarios (PINNING-skip, ACCELERATION+up, ACCELERATION+down,
+  flat-open-skip, boundary case) — all passed.
+- **Status**: LIVE, runs once daily (09:16-09:19 window, after the 09:15
+  candle completes), tagged strategy_type="gamma_opening" for independent
+  win-rate tracking. This is the strategy that will build the "genuine
+  opinion" (Saim's words) on whether the gamma-explosion premise holds up
+  in continuous live paper-trading, not just historical backtest.
