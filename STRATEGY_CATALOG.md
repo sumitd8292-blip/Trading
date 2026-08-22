@@ -393,3 +393,24 @@ Agent gate, Telegram alert — same rigor as Boxes 16/19.
   win-rate tracking. This is the strategy that will build the "genuine
   opinion" (Saim's words) on whether the gamma-explosion premise holds up
   in continuous live paper-trading, not just historical backtest.
+
+## GAP FIXED (22 Aug 2026): Prediction-vs-Reality Tracking + Shortfall-Review Now Actually Runs
+Per Saim's identified gap — code-audit confirmed review_shortfall_patterns()
+existed but was NEVER called by anything (pure dead infrastructure), and
+estimated_premium_pnl was post-facto only, no explicit "predicted X vs
+got Y, how accurate" comparison ever computed.
+
+**prediction_accuracy_tracker.py**: logs Delta/Gamma inputs at trade-open,
+computes expected premium move at trade-close, compares against actual.
+**Critical design distinction (Saim's explicit correction)**: uses
+Delta+Gamma 2nd-order Taylor (groww_option_chain.estimate_premium_move's
+formula) specifically for gamma_opening strategy trades (whose entire
+premise IS gamma-driven amplification beyond plain Delta — using
+plain-Delta as the "expected" baseline would make this specific strategy
+look wrong even when working exactly as designed), plain Delta for all
+5 other strategies. 7 tests passed, including a test explicitly
+recreating Saim's "15pt move → 47pt-scale premium via Gamma" scenario.
+
+Both review_shortfall_patterns() and review_prediction_accuracy_by_strategy()
+now actually get called — wired into daily_paper_summary.py's Telegram
+report, so this data gets SEEN every day going forward, not just collected.

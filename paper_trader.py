@@ -90,6 +90,7 @@ def open_paper_trade(symbol, date_str, signal, entry_price, sl_points, target_po
     initial_sl_price = entry_price - sl_points if signal == "LONG" else entry_price + sl_points
 
     trade = {
+        "trade_id": f"{symbol}_{date_str}_{strategy_type}_{datetime.now().strftime('%H%M%S%f')}",
         "symbol": symbol,
         "date": date_str,
         "signal": signal,
@@ -116,6 +117,20 @@ def open_paper_trade(symbol, date_str, signal, entry_price, sl_points, target_po
     }
     entries.append(trade)
     _write_all(entries)
+
+    # Prediction-accuracy logging (added 22 Aug 2026, per Saim's
+    # identified learning-gap — closes the "agent never checks if its
+    # Delta prediction actually happened" issue). Uses Delta+Gamma for
+    # gamma_opening specifically (its own premise IS gamma-driven
+    # amplification beyond plain Delta), plain Delta for all others.
+    if option_snapshot and option_snapshot.get("delta") is not None:
+        try:
+            from prediction_accuracy_tracker import log_trade_prediction
+            log_trade_prediction(trade["trade_id"], symbol, strategy_type, entry_price,
+                                  option_snapshot["delta"], option_snapshot.get("gamma"))
+        except Exception as e:
+            print(f"Prediction-tracking log failed (non-fatal): {e}")
+
     return trade
 
 
@@ -214,6 +229,15 @@ def check_open_trades(symbol, latest_candles, is_eod=False):
                 premium_move_from_delta = pts * delta
                 theta_decay = (theta * (hold_minutes / 375)) if theta is not None else 0  # 375 = trading minutes/day
                 trade["estimated_premium_pnl"] = round(premium_move_from_delta + theta_decay, 2)
+
+                # Prediction-accuracy check (added 22 Aug 2026) — the
+                # actual "did our Delta/Delta+Gamma prediction come true"
+                # verification Saim identified was missing entirely.
+                try:
+                    from prediction_accuracy_tracker import check_prediction_accuracy
+                    check_prediction_accuracy(trade["trade_id"], exit_price, trade["estimated_premium_pnl"])
+                except Exception as pred_e:
+                    print(f"Prediction-accuracy check failed (non-fatal): {pred_e}")
 
             record_outcome(symbol, trade["date"], outcome, points=round(pts, 2), exit_reason=exit_reason,
                             notes="auto-recorded by paper_trader.py (self-generated, not necessarily a real trade Saim took; trailing-stop exit)")

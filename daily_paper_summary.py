@@ -81,6 +81,28 @@ def build_daily_summary(date_str):
         lines.append("<b>Volume Profile:</b>")
         lines.extend(poc_lines)
 
+    # Learning-loop review (added 22 Aug 2026, per Saim's identified gap
+    # — this data was being collected but NEVER actually reviewed by
+    # anything. Now included in every daily summary, closing that gap.)
+    try:
+        from paper_trader import review_shortfall_patterns
+        from prediction_accuracy_tracker import review_prediction_accuracy_by_strategy
+        shortfall = review_shortfall_patterns()
+        pred_accuracy = review_prediction_accuracy_by_strategy()
+        if shortfall.get("shortfall_trades", 0) > 0:
+            lines.append("")
+            lines.append(f"<b>Shortfall Review:</b> {shortfall['shortfall_trades']}/{shortfall['total_closed']} "
+                          f"trades fell short ({shortfall['shortfall_rate_pct']}%), avg shortfall "
+                          f"{shortfall['avg_shortfall_points']}pts")
+        if isinstance(pred_accuracy, dict) and "message" not in pred_accuracy:
+            lines.append("")
+            lines.append("<b>Prediction Accuracy by Strategy:</b>")
+            for strat, stats in pred_accuracy.items():
+                lines.append(f"  {strat}: {stats['avg_accuracy_pct']}% accurate ({stats['trade_count']} trades, "
+                              f"{stats['systematic_bias']})")
+    except Exception:
+        pass
+
     return "\n".join(lines)
 
 
