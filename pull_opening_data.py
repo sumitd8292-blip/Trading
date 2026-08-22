@@ -29,21 +29,36 @@ INSTRUMENTS = {
 
 # Top-5 NIFTY-weighted stocks (confirmed 22 Aug via web search) — looked
 # up dynamically by name from Dhan's instrument list, not hardcoded IDs
-# (per the lesson learned from Groww's symbol-guessing issues earlier)
-TOP5_STOCK_NAMES = ["HDFC BANK", "ICICI BANK", "RELIANCE INDUSTRIES", "INFOSYS", "BHARTI AIRTEL"]
+# (per the lesson learned from Groww's symbol-guessing issues earlier).
+# FIXED 22 Aug: use exact NSE-EQUITY SEM_TRADING_SYMBOL (short form, e.g.
+# "RELIANCE" not "RELIANCE INDUSTRIES") — verified via inspect_dhan_csv.py
+# against real CSV data (RELIANCE: SEM_EXM_EXCH_ID=NSE, SEM_SEGMENT=E,
+# SEM_INSTRUMENT_NAME=EQUITY, security_id=2885).
+TOP5_STOCKS = {
+    "HDFC BANK": "HDFCBANK", "ICICI BANK": "ICICIBANK", "RELIANCE INDUSTRIES": "RELIANCE",
+    "INFOSYS": "INFY", "BHARTI AIRTEL": "BHARTIARTL",
+}
 
 DAYS_BACK = 60
 
 
-def find_stock_security_id(stock_name):
-    """Looks up a stock's NSE equity security_id by name from Dhan's
-    instrument master list — avoids guessing IDs."""
+def find_stock_security_id(trading_symbol):
+    """
+    Looks up a stock's NSE EQUITY security_id by EXACT trading_symbol
+    match (e.g. "RELIANCE", "INFY", "HDFCBANK") — NOT a substring search
+    against the full company name, which was the earlier bug (searching
+    for "RELIANCE INDUSTRIES" could never match Dhan's short trading
+    symbol "RELIANCE"). Filters explicitly to NSE + Equity segment
+    (SEM_EXM_EXCH_ID="NSE", SEM_SEGMENT="E", SEM_INSTRUMENT_NAME="EQUITY")
+    — confirmed exact field values via inspect_dhan_csv.py, 22 Aug.
+    """
     csv_content = download_instrument_list()
     reader = csv.DictReader(csv_content.splitlines())
     for row in reader:
         if (row.get("SEM_EXM_EXCH_ID") == "NSE" and
                 row.get("SEM_SEGMENT") == "E" and
-                stock_name.upper() in (row.get("SEM_TRADING_SYMBOL") or "").upper()):
+                row.get("SEM_INSTRUMENT_NAME") == "EQUITY" and
+                row.get("SEM_TRADING_SYMBOL") == trading_symbol):
             return row.get("SEM_SMST_SECURITY_ID")
     return None
 
@@ -67,23 +82,23 @@ def run():
             print(f"  FAILED for {name}: {e}")
 
     print("\nLooking up top-5 NIFTY stocks' security IDs...")
-    for stock_name in TOP5_STOCK_NAMES:
+    for display_name, trading_symbol in TOP5_STOCKS.items():
         try:
-            sec_id = find_stock_security_id(stock_name)
+            sec_id = find_stock_security_id(trading_symbol)
             if not sec_id:
-                print(f"  Could not find security_id for {stock_name}")
-                results[stock_name] = {"error": "security_id not found"}
+                print(f"  Could not find security_id for {display_name} ({trading_symbol})")
+                results[display_name] = {"error": "security_id not found"}
                 continue
-            print(f"  {stock_name} -> security_id={sec_id}, fetching...")
+            print(f"  {display_name} ({trading_symbol}) -> security_id={sec_id}, fetching...")
             data = fetch_historical_data(
                 sec_id, "NSE_EQ", "EQUITY",
                 f"{from_date} 09:00:00", f"{to_date} 15:30:00", interval="1"
             )
-            results[stock_name] = data
-            print(f"  SUCCESS — got data for {stock_name}")
+            results[display_name] = data
+            print(f"  SUCCESS — got data for {display_name}")
         except Exception as e:
-            results[stock_name] = {"error": str(e)}
-            print(f"  FAILED for {stock_name}: {e}")
+            results[display_name] = {"error": str(e)}
+            print(f"  FAILED for {display_name}: {e}")
 
     os.makedirs("data", exist_ok=True)
     with open("data/opening_research.json", "w") as f:
