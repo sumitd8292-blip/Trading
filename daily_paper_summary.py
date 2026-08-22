@@ -100,6 +100,15 @@ def build_daily_summary(date_str):
             for strat, stats in pred_accuracy.items():
                 lines.append(f"  {strat}: {stats['avg_accuracy_pct']}% accurate ({stats['trade_count']} trades, "
                               f"{stats['systematic_bias']})")
+
+        from strategy_failure_diagnostics import review_common_failure_factors
+        failure_report = review_common_failure_factors()
+        if isinstance(failure_report, dict) and "factors" in failure_report:
+            lines.append("")
+            lines.append(f"<b>Failure-Factor Diagnosis</b> ({failure_report['total_diagnosed_trades']} trades diagnosed):")
+            for factor, stats in failure_report["factors"].items():
+                if stats["trigger_rate_pct"] and stats["trigger_rate_pct"] > 0:
+                    lines.append(f"  {factor}: {stats['trigger_rate_pct']}% of the time ({stats['triggered_count']}/{stats['total_checked']})")
     except Exception:
         pass
 

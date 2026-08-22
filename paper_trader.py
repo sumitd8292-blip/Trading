@@ -235,7 +235,24 @@ def check_open_trades(symbol, latest_candles, is_eod=False):
                 # verification Saim identified was missing entirely.
                 try:
                     from prediction_accuracy_tracker import check_prediction_accuracy
-                    check_prediction_accuracy(trade["trade_id"], exit_price, trade["estimated_premium_pnl"])
+                    accuracy_result = check_prediction_accuracy(trade["trade_id"], exit_price, trade["estimated_premium_pnl"])
+
+                    # WHY-diagnostic (added 22 Aug 2026, per Saim's "just
+                    # like debugging code, find WHERE it went wrong, don't
+                    # just re-guess" instruction) — automatically runs
+                    # when a prediction misses significantly
+                    if accuracy_result and accuracy_result.get("accuracy_pct") is not None and accuracy_result["accuracy_pct"] < 50:
+                        from strategy_failure_diagnostics import diagnose_prediction_miss, log_diagnosis
+                        hold_minutes = (datetime.fromisoformat(trade["exit_time"]) -
+                                        datetime.fromisoformat(trade["entry_time"])).total_seconds() / 60
+                        findings = diagnose_prediction_miss(
+                            trade,
+                            gex_regime_at_entry=trade.get("layer_status", {}).get("gex_regime"),
+                            gex_regime_at_exit=None,  # exit-time regime not currently captured live — honest gap, future improvement
+                            volume_at_entry=None, avg_volume_baseline=None,  # not currently threaded through to this point — future improvement
+                            entry_to_now_minutes=round(hold_minutes, 1),
+                        )
+                        log_diagnosis(trade["trade_id"], symbol, trade.get("strategy_type"), accuracy_result["accuracy_pct"], findings)
                 except Exception as pred_e:
                     print(f"Prediction-accuracy check failed (non-fatal): {pred_e}")
 

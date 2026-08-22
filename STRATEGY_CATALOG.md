@@ -414,3 +414,34 @@ recreating Saim's "15pt move → 47pt-scale premium via Gamma" scenario.
 Both review_shortfall_patterns() and review_prediction_accuracy_by_strategy()
 now actually get called — wired into daily_paper_summary.py's Telegram
 report, so this data gets SEEN every day going forward, not just collected.
+
+## NEW: Strategy-Failure Diagnostics + Adversarial-Review Principle (22 Aug 2026)
+Per Saim's direct analogy: exactly like inspect_dhan_csv.py diagnosed the
+REAL reason a code-lookup was failing (rather than re-guessing), this
+diagnoses the REAL reason a trade's prediction misses — researched from
+academic/industry AI-trading-agent literature: (1) "self-reflection
+inherits the generator's prior" — a model reviewing its own reasoning
+reuses the same blind spots that caused the error; external/independent
+checks work better; (2) concrete common failure-mode checklist from the
+Reflexion pattern: "feature/label leakage, stale data, ignored costs,
+regime mismatch."
+
+strategy_failure_diagnostics.py: diagnose_prediction_miss() checks a
+CLOSED trade against 4 independently-verifiable factors (regime_mismatch,
+low_volume_at_entry, hold_time_exceeded_design_window, non_supportive_
+layers_at_entry) — every factor checked and recorded even if not
+triggered, for a complete/comparable diagnostic record. review_common_
+failure_factors() aggregates across all diagnosed trades to find which
+factor is MOST OFTEN responsible. 6 tests + 1 real bug found-and-fixed
+during integration testing (a `strategy_type` variable-scope bug,
+caught via the exact same "test, find error, fix" discipline being
+implemented here).
+
+Auto-triggers whenever a closed trade's prediction accuracy is below
+50% (ACCURACY_MISS_THRESHOLD_PCT). Wired into paper_trader.py's trade-
+close logic and daily_paper_summary.py's Telegram report.
+
+HONEST GAPS noted for future improvement: gex_regime_at_exit and
+volume_at_entry aren't currently threaded through to the diagnostic
+call site (only gex_regime_at_entry and hold-time are genuinely live) —
+flagged in code comments, not silently assumed complete.
